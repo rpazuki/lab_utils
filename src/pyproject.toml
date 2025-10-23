@@ -1,0 +1,5 @@
+[project]
+name = "labUtils"
+version = "0.0.1"
+description = "ifferent python snippet for lab."
+readme = "README.md"

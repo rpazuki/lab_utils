@@ -1,0 +1,8 @@
+=== Experiment Data ===
+Well,Strain,Strain Well,Media Type,Supplements,Media Volume (µL),Water Volume (µL),Supplement Volume (µL),Volume per Supplement (µL),Total Volume (µL)
+A1,SLAB1,A1,2x_M9,Glucose,230,184.0,46.0,46.0,460
+B1,SLAB2,B1,2x_M9,Sucrose,230,184.0,46.0,46.0,460
+C1,SLAB3,C1,2x_M9,Succinate,230,184.0,46.0,46.0,460
+A2,SLAB9,A2,2x_M9,Glucose,230,184.0,46.0,46.0,460
+B2,SLAB10,B2,2x_M9,Sucrose,230,184.0,46.0,46.0,460
+C2,SLAB11,C2,2x_M9,Succinate,230,184.0,46.0,46.0,460

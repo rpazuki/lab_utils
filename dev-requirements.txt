@@ -1,0 +1,8 @@
+pandas
+scipy
+isort
+black
+setuptools
+pytest
+pylint
+-e ./src
