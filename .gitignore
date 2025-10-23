@@ -52,3 +52,7 @@ ENV/
 # Data folder and its contents
 data/
 data/**
+
+
+# Egg infos
+*.egg-info/
