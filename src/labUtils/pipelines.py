@@ -544,7 +544,12 @@ class OutputProcess(Process):
         return payload
 
 
-def build_pipeline_from_yaml(yaml_path: str | Path, pipeline_name: str, output_dir: Optional[str | Path] = None) -> DFPipeline:
+def build_pipeline_from_yaml(
+    yaml_path: str | Path,
+    pipeline_name: str,
+    output_dir: Optional[str | Path] = None,
+    input_sources: Optional[dict[str, str]] = None
+) -> DFPipeline:
     """Build a DFPipeline from a YAML configuration file.
 
     Parameters
@@ -556,6 +561,11 @@ def build_pipeline_from_yaml(yaml_path: str | Path, pipeline_name: str, output_d
     output_dir : str | Path, optional
         Output directory to prepend to all output file paths from YAML.
         If None, uses paths as specified in YAML.
+    input_sources : dict[str, str], optional
+        Dictionary mapping input names to source paths. This overrides the 'src'
+        field in the YAML for specified inputs. Allows reusing the same pipeline
+        configuration with different input files.
+        Example: {'raw_data': 'file1.csv', 'meta_data': 'metadata1.csv'}
 
     Returns
     -------
@@ -568,6 +578,28 @@ def build_pipeline_from_yaml(yaml_path: str | Path, pipeline_name: str, output_d
         If the YAML structure is invalid or pipeline_name is not found
     FileNotFoundError
         If the YAML file does not exist
+
+    Examples
+    --------
+    # Use default sources from YAML
+    pipeline = build_pipeline_from_yaml('config.yaml', 'pipeline_1')
+
+    # Override input sources
+    pipeline = build_pipeline_from_yaml(
+        'config.yaml',
+        'pipeline_1',
+        input_sources={'raw_data': 'data/file1.csv'}
+    )
+
+    # Process multiple files with same pipeline
+    for file in data_files:
+        pipeline = build_pipeline_from_yaml(
+            'config.yaml',
+            'pipeline_1',
+            input_sources={'raw_data': file},
+            output_dir=f'results/{file.stem}'
+        )
+        result = pipeline()
     """
     # Load YAML file
     yaml_path = Path(yaml_path)
@@ -619,9 +651,15 @@ def build_pipeline_from_yaml(yaml_path: str | Path, pipeline_name: str, output_d
             for item in input_spec:
                 input_params.update(item)
 
+            # Override src with input_sources if provided
+            if input_sources and input_name in input_sources:
+                input_params['src'] = input_sources[input_name]
+
             # Validate required fields
             if 'src' not in input_params:
-                raise ValueError(f"Input '{input_name}' must have 'src' field")
+                raise ValueError(
+                    f"Input '{input_name}' must have 'src' field in YAML or provided via input_sources parameter"
+                )
             if 'package' not in input_params:
                 raise ValueError(f"Input '{input_name}' must have 'package' field")
             if 'method' not in input_params:

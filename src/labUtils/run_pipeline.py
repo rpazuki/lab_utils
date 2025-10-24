@@ -58,11 +58,30 @@ Example:
         help='Enable verbose logging'
     )
 
+    parser.add_argument(
+        '-i', '--input',
+        action='append',
+        metavar='NAME=PATH',
+        help='Override input source(s). Format: NAME=PATH. Can be specified multiple times. '
+             'Example: -i raw_data=file1.csv -i meta_data=meta1.csv'
+    )
+
     args = parser.parse_args()
 
     # Set logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # Parse input overrides
+    input_sources = {}
+    if args.input:
+        for input_spec in args.input:
+            if '=' not in input_spec:
+                log.error(f"Invalid input format: '{input_spec}'. Expected NAME=PATH")
+                sys.exit(1)
+            name, path = input_spec.split('=', 1)
+            input_sources[name.strip()] = path.strip()
+        log.info(f"Input overrides: {input_sources}")
 
     # Validate YAML file exists
     yaml_path = Path(args.yaml_file)
@@ -78,7 +97,12 @@ Example:
     try:
         # Build the pipeline from YAML
         log.info(f"Loading pipeline '{args.pipeline_name}' from {yaml_path}")
-        pipeline = build_pipeline_from_yaml(yaml_path, args.pipeline_name, output_dir)
+        pipeline = build_pipeline_from_yaml(
+            yaml_path,
+            args.pipeline_name,
+            output_dir,
+            input_sources=input_sources if input_sources else None
+        )
         log.info(f"Pipeline created successfully with {len(pipeline.processes)} processes")
 
         # Execute the pipeline
