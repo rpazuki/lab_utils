@@ -544,20 +544,20 @@ class OutputProcess(Process):
         return payload
 
 
-def build_pipeline_from_yaml(
-    yaml_path: str | Path,
+def build_pipeline_from_yaml_string(
+    yaml_string: str,
     pipeline_name: str,
     output_dir: Optional[str | Path] = None,
     input_sources: Optional[dict[str, str]] = None
 ) -> DFPipeline:
-    """Build a DFPipeline from a YAML configuration file.
+    """Build a DFPipeline from a YAML configuration string.
 
     Parameters
     ----------
-    yaml_path : str | Path
-        Path to the YAML configuration file
+    yaml_string : str
+        YAML configuration as a string
     pipeline_name : str
-        Name of the pipeline to build from the YAML file
+        Name of the pipeline to build from the YAML
     output_dir : str | Path, optional
         Output directory to prepend to all output file paths from YAML.
         If None, uses paths as specified in YAML.
@@ -576,42 +576,26 @@ def build_pipeline_from_yaml(
     ------
     ValueError
         If the YAML structure is invalid or pipeline_name is not found
-    FileNotFoundError
-        If the YAML file does not exist
 
     Examples
     --------
-    # Use default sources from YAML
-    pipeline = build_pipeline_from_yaml('config.yaml', 'pipeline_1')
-
-    # Override input sources
-    pipeline = build_pipeline_from_yaml(
-        'config.yaml',
-        'pipeline_1',
-        input_sources={'raw_data': 'data/file1.csv'}
-    )
-
-    # Process multiple files with same pipeline
-    for file in data_files:
-        pipeline = build_pipeline_from_yaml(
-            'config.yaml',
-            'pipeline_1',
-            input_sources={'raw_data': file},
-            output_dir=f'results/{file.stem}'
-        )
-        result = pipeline()
+    yaml_config = '''
+    pipelines:
+      - pipeline_1:
+          Inputs:
+            - raw_data:
+                - src: data.csv
+                - package: pandas
+                - method: read_csv
+    '''
+    pipeline = build_pipeline_from_yaml_string(yaml_config, 'pipeline_1')
     """
-    # Load YAML file
-    yaml_path = Path(yaml_path)
-    if not yaml_path.exists():
-        raise FileNotFoundError(f"YAML file not found: {yaml_path}")
-
     # Convert output_dir to Path if provided
     if output_dir is not None:
         output_dir = Path(output_dir)
 
-    with open(yaml_path, 'r') as f:
-        config = yaml.safe_load(f)
+    # Load YAML from string
+    config = yaml.safe_load(yaml_string)
 
     # Validate top-level structure
     if 'pipelines' not in config:
@@ -733,3 +717,77 @@ def build_pipeline_from_yaml(
 
     # Create and return the DFPipeline
     return DFPipeline(processes)
+
+
+def build_pipeline_from_yaml(
+    yaml_path: str | Path,
+    pipeline_name: str,
+    output_dir: Optional[str | Path] = None,
+    input_sources: Optional[dict[str, str]] = None
+) -> DFPipeline:
+    """Build a DFPipeline from a YAML configuration file.
+
+    Parameters
+    ----------
+    yaml_path : str | Path
+        Path to the YAML configuration file
+    pipeline_name : str
+        Name of the pipeline to build from the YAML file
+    output_dir : str | Path, optional
+        Output directory to prepend to all output file paths from YAML.
+        If None, uses paths as specified in YAML.
+    input_sources : dict[str, str], optional
+        Dictionary mapping input names to source paths. This overrides the 'src'
+        field in the YAML for specified inputs. Allows reusing the same pipeline
+        configuration with different input files.
+        Example: {'raw_data': 'file1.csv', 'meta_data': 'metadata1.csv'}
+
+    Returns
+    -------
+    DFPipeline
+        A configured DFPipeline ready to execute
+
+    Raises
+    ------
+    ValueError
+        If the YAML structure is invalid or pipeline_name is not found
+    FileNotFoundError
+        If the YAML file does not exist
+
+    Examples
+    --------
+    # Use default sources from YAML
+    pipeline = build_pipeline_from_yaml('config.yaml', 'pipeline_1')
+
+    # Override input sources
+    pipeline = build_pipeline_from_yaml(
+        'config.yaml',
+        'pipeline_1',
+        input_sources={'raw_data': 'data/file1.csv'}
+    )
+
+    # Process multiple files with same pipeline
+    for file in data_files:
+        pipeline = build_pipeline_from_yaml(
+            'config.yaml',
+            'pipeline_1',
+            input_sources={'raw_data': file},
+            output_dir=f'results/{file.stem}'
+        )
+        result = pipeline()
+    """
+    # Load YAML file
+    yaml_path = Path(yaml_path)
+    if not yaml_path.exists():
+        raise FileNotFoundError(f"YAML file not found: {yaml_path}")
+
+    with open(yaml_path, 'r', encoding='utf-8') as f:
+        yaml_string = f.read()
+
+    # Delegate to build_pipeline_from_yaml_string
+    return build_pipeline_from_yaml_string(
+        yaml_string=yaml_string,
+        pipeline_name=pipeline_name,
+        output_dir=output_dir,
+        input_sources=input_sources
+    )
