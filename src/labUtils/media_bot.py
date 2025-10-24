@@ -9,9 +9,8 @@ from typing import Union
 import pandas as pd
 
 __all__ = [
-    'parse_raw_bmg_export',
-    'process_bmg_dataframe',
-    'parse_meta_experiment',
+    'parse_raw_CLARIOstar_export',
+    'parse_protocol_metadata',
     'parse',
     'report',
     'parse_time_label',
@@ -42,8 +41,10 @@ def parse_time_label(lbl: str):
     mnt = mnt % 60
     return h + mnt/60.0, h, mnt
 
-def parse_raw_bmg_export(path: Path) -> pd.DataFrame:
-    """Parse CLARIOstar OD600 export and process the header to create a dataframe.
+def parse_raw_CLARIOstar_export(path: Path) -> pd.DataFrame:
+    """Parse CLARIOstar OD600 export and process the header to create a tidy long format dataframe..
+
+
 
     Parameters
     ----------
@@ -52,8 +53,8 @@ def parse_raw_bmg_export(path: Path) -> pd.DataFrame:
 
     Returns
     -------
-    pd.DataFrame
-        Wide format dataframe with processed headers
+     pd.DataFrame
+        Tidy long format dataframe with processed time labels and well information
     """
     text = path.read_text(encoding="utf-8", errors="ignore")
     lines = text.splitlines()
@@ -96,21 +97,6 @@ def parse_raw_bmg_export(path: Path) -> pd.DataFrame:
     df["well_row"] = df["well_row"].astype(str).str.strip()
     df["well_col"] = pd.to_numeric(df["well_col"], errors="coerce").astype("Int64")
 
-    return df
-
-def process_bmg_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Process a BMG dataframe to create a tidy long format dataframe.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Wide format dataframe from read_raw_bmg_export
-
-    Returns
-    -------
-    pd.DataFrame
-        Tidy long format dataframe with processed time labels and well information
-    """
     # Wide -> long
     value_vars = [c for c in df.columns if c not in ("well_row","well_col","content")]
     long_df = df.melt(id_vars=["well_row","well_col","content"], value_vars=value_vars,
@@ -129,6 +115,7 @@ def process_bmg_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     long_df = long_df.sort_values(["well_row","well_col","time_min"], kind="stable").reset_index(drop=True)
     return long_df
 
+
 def split_sections(meta_text: str):
     """Split the custom metadata file into sections keyed by the === Title === line."""
     sections = {}
@@ -141,7 +128,7 @@ def split_sections(meta_text: str):
         sections[title] = "\n".join(block)
     return sections
 
-def parse_meta_experiment(meta_path: Path) -> pd.DataFrame:
+def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
     """Parse the '=== Experiment Data ===' section as a DataFrame and tidy column names."""
     text = meta_path.read_text(encoding="utf-8", errors="ignore")
     sections = split_sections(text)
@@ -201,13 +188,12 @@ def parse(raw_data: Union[pd.DataFrame, Path], meta_data: Union[pd.DataFrame, Pa
     """
     # Handle file paths if provided
     if isinstance(raw_data, Path):
-        raw_df = parse_raw_bmg_export(raw_data)
-        raw_long = process_bmg_dataframe(raw_df)
+        raw_long = parse_raw_CLARIOstar_export(raw_data)
     else:
         raw_long = raw_data
 
     if isinstance(meta_data, Path):
-        meta = parse_meta_experiment(meta_data)
+        meta = parse_protocol_metadata(meta_data)
     else:
         meta = meta_data
 
@@ -242,13 +228,12 @@ def report(raw_data: Union[pd.DataFrame, Path], meta_data: Union[pd.DataFrame, P
     """
     # Handle file paths if provided
     if isinstance(raw_data, Path):
-        raw_df = parse_raw_bmg_export(raw_data)
-        raw_long = process_bmg_dataframe(raw_df)
+        raw_long = parse_raw_CLARIOstar_export(raw_data)
     else:
         raw_long = raw_data
 
     if isinstance(meta_data, Path):
-        meta = parse_meta_experiment(meta_data)
+        meta = parse_protocol_metadata(meta_data)
     else:
         meta = meta_data
     report_rows = []

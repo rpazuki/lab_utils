@@ -51,8 +51,8 @@ import pandas as pd
 import pytest
 
 from labUtils.growth_rates import fit_modified_gompertz_per_series
-from labUtils.media_bot import (parse, parse_meta_experiment,
-                                parse_raw_bmg_export, process_bmg_dataframe)
+from labUtils.media_bot import (parse, parse_protocol_metadata,
+                                parse_raw_CLARIOstar_export)
 
 
 @pytest.fixture
@@ -70,9 +70,8 @@ def test_meta_path():
 def test_complete_growth_workflow(test_data_path, test_meta_path):
     """Test the complete workflow from raw data to growth curve fitting"""
     # Step 1: Parse raw data and metadata
-    raw_df = parse_raw_bmg_export(test_data_path)
-    raw_long = process_bmg_dataframe(raw_df)
-    meta = parse_meta_experiment(test_meta_path)
+    raw_long = parse_raw_CLARIOstar_export(test_data_path)
+    meta = parse_protocol_metadata(test_meta_path)
     df = parse(raw_long, meta)
 
     # Verify basic data parsing

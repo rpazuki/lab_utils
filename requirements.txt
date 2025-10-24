@@ -1,2 +1,4 @@
 pandas
 scipy
+addict
+pyyaml

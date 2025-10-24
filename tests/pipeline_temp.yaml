@@ -1,0 +1,30 @@
+pipelines:
+    - pipeline_1:
+        Inputs:
+            - raw_data:
+                - src: C:\Users\rh2310\codes\lab_utils\tests\rw_data.csv
+                - package:  labUtils.media_bot
+                - method: parse_raw_CLARIOstar_export
+            - meta_data:
+                - src: C:\Users\rh2310\codes\lab_utils\tests\protocol_metadata.csv
+                - package:  labUtils.media_bot
+                - method: parse_protocol_metadata
+        Processes:
+            - df_parsed:
+                package: labUtils.media_bot
+                method: parse
+                parameters:
+                    raw_data: raw_data
+                    meta_data: meta_data
+            - df_fit_modified_gompertz:
+                package: labUtils.growth_rates
+                method: fit_modified_gompertz_per_series
+                parameters:
+                    df: df_parsed
+                    time_col: time_min
+                    group_cols:
+                        - well
+
+        Outputs:
+            - df_parsed: parsed_data.csv
+            - df_fit_modified_gompertz: [growth_rates.csv, report.csv]

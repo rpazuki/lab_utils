@@ -40,9 +40,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from labUtils.media_bot import (parse, parse_meta_experiment,
-                                parse_raw_bmg_export, parse_time_label,
-                                process_bmg_dataframe, report)
+from labUtils.media_bot import (parse, parse_protocol_metadata,
+                                parse_raw_CLARIOstar_export, parse_time_label,
+                                report)
 
 
 @pytest.fixture
@@ -71,16 +71,14 @@ def test_parse_time_label():
 def test_read_bmg_export(test_data_path):
     """Test reading BMG export file"""
     # Test parse_raw_bmg_export
-    raw_df = parse_raw_bmg_export(test_data_path)
+    df = parse_raw_CLARIOstar_export(test_data_path)
 
     # Check basic structure of raw data
-    assert isinstance(raw_df, pd.DataFrame)
-    assert not raw_df.empty
-    assert set(raw_df["well_row"]) == {"A", "B", "C"}
-    assert set(raw_df["well_col"]) == {1, 2}
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert set(df["well_row"]) == {"A", "B", "C"}
+    assert set(df["well_col"]) == {1, 2}
 
-    # Process the raw data
-    df = process_bmg_dataframe(raw_df)
 
     # Check final structure
     assert isinstance(df, pd.DataFrame)
@@ -111,7 +109,7 @@ def test_read_bmg_export(test_data_path):
 
 def test_read_meta_experiment(test_meta_path):
     """Test reading experiment metadata"""
-    df = parse_meta_experiment(test_meta_path)
+    df = parse_protocol_metadata(test_meta_path)
 
     # Check basic structure
     assert isinstance(df, pd.DataFrame)
@@ -140,9 +138,8 @@ def test_read_meta_experiment(test_meta_path):
 def test_parse_integration(test_data_path, test_meta_path):
     """Test full integration of parsing both data and metadata"""
     # First read and process the raw data
-    raw_df = parse_raw_bmg_export(test_data_path)
-    raw_long = process_bmg_dataframe(raw_df)
-    meta = parse_meta_experiment(test_meta_path)
+    raw_long = parse_raw_CLARIOstar_export(test_data_path)
+    meta = parse_protocol_metadata(test_meta_path)
 
     # Then parse them together
     df = parse(raw_long, meta)
@@ -171,9 +168,8 @@ def test_parse_integration(test_data_path, test_meta_path):
 def test_report_function(test_data_path, test_meta_path):
     """Test the report function for data validation"""
     # First read and process the raw data
-    raw_df = parse_raw_bmg_export(test_data_path)
-    raw_long = process_bmg_dataframe(raw_df)
-    meta = parse_meta_experiment(test_meta_path)
+    raw_long = parse_raw_CLARIOstar_export(test_data_path)
+    meta = parse_protocol_metadata(test_meta_path)
 
     # Generate report for complete data
     report_df = report(raw_long, meta)
