@@ -40,8 +40,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from labUtils.media_bot import (parse, parse_time_label, read_bmg_export,
-                                read_meta_experiment, report)
+from labUtils.media_bot import (parse, parse_meta_experiment,
+                                parse_raw_bmg_export, parse_time_label,
+                                process_bmg_dataframe, report)
 
 
 @pytest.fixture
@@ -69,9 +70,19 @@ def test_parse_time_label():
 
 def test_read_bmg_export(test_data_path):
     """Test reading BMG export file"""
-    df = read_bmg_export(test_data_path)
+    # Test parse_raw_bmg_export
+    raw_df = parse_raw_bmg_export(test_data_path)
 
-    # Check basic structure
+    # Check basic structure of raw data
+    assert isinstance(raw_df, pd.DataFrame)
+    assert not raw_df.empty
+    assert set(raw_df["well_row"]) == {"A", "B", "C"}
+    assert set(raw_df["well_col"]) == {1, 2}
+
+    # Process the raw data
+    df = process_bmg_dataframe(raw_df)
+
+    # Check final structure
     assert isinstance(df, pd.DataFrame)
     assert not df.empty
 
@@ -100,7 +111,7 @@ def test_read_bmg_export(test_data_path):
 
 def test_read_meta_experiment(test_meta_path):
     """Test reading experiment metadata"""
-    df = read_meta_experiment(test_meta_path)
+    df = parse_meta_experiment(test_meta_path)
 
     # Check basic structure
     assert isinstance(df, pd.DataFrame)
@@ -128,7 +139,13 @@ def test_read_meta_experiment(test_meta_path):
 
 def test_parse_integration(test_data_path, test_meta_path):
     """Test full integration of parsing both data and metadata"""
-    df = parse(test_data_path, test_meta_path)
+    # First read and process the raw data
+    raw_df = parse_raw_bmg_export(test_data_path)
+    raw_long = process_bmg_dataframe(raw_df)
+    meta = parse_meta_experiment(test_meta_path)
+
+    # Then parse them together
+    df = parse(raw_long, meta)
 
     # Check basic structure
     assert isinstance(df, pd.DataFrame)
@@ -153,7 +170,13 @@ def test_parse_integration(test_data_path, test_meta_path):
 
 def test_report_function(test_data_path, test_meta_path):
     """Test the report function for data validation"""
-    report_df = report(test_data_path, test_meta_path)
+    # First read and process the raw data
+    raw_df = parse_raw_bmg_export(test_data_path)
+    raw_long = process_bmg_dataframe(raw_df)
+    meta = parse_meta_experiment(test_meta_path)
+
+    # Generate report for complete data
+    report_df = report(raw_long, meta)
 
     # Check basic structure
     assert isinstance(report_df, pd.DataFrame)
@@ -161,38 +184,23 @@ def test_report_function(test_data_path, test_meta_path):
     # For valid test data, we expect no issues
     assert report_df.empty, "Expected no issues in the test data"
 
-    # Create a case with missing metadata to test issue reporting
-    temp_meta = test_meta_path.parent / "temp_metadata.csv"
-    with open(test_meta_path, 'r', encoding="utf8") as f:
-        content = f.read()
-    # Keep the header and first three wells (A1, B1, C1)
-    lines = content.split("\n")
-    header_end = next(i for i, line in enumerate(lines) if line.startswith("Well,"))
-    reduced_content = "\n".join(lines[:header_end + 1] +
-                              [line for line in lines[header_end + 1:]
-                               if line.strip() and not line.startswith(("A2", "B2", "C2"))])
-    with open(temp_meta, 'w', encoding="utf8") as f:
-        f.write(reduced_content)
+    # Create a reduced metadata DataFrame missing some wells
+    reduced_meta = meta[~meta["well"].isin(["A2", "B2", "C2"])].copy()
 
-    try:
-        # Now test with incomplete metadata
-        report_df = report(test_data_path, temp_meta)
+    # Now test with incomplete metadata
+    report_df = report(raw_long, reduced_meta)
 
-        # Check that issues are reported correctly
-        assert isinstance(report_df, pd.DataFrame)
-        assert set(report_df.columns) == {"issue", "count", "wells"}
-        assert not report_df.empty
+    # Check that issues are reported correctly
+    assert isinstance(report_df, pd.DataFrame)
+    assert set(report_df.columns) == {"issue", "count", "wells"}
+    assert not report_df.empty
 
-        # Verify specific issues
-        wells_missing = report_df[report_df["issue"] == "wells_missing_in_metadata"]
-        assert not wells_missing.empty
-        assert wells_missing["count"].iloc[0] == 3  # A2, B2, C2 should be missing
-        assert set(wells_missing["wells"].iloc[0].split(";")) == {"A2", "B2", "C2"}
+    # Verify specific issues
+    wells_missing = report_df[report_df["issue"] == "wells_missing_in_metadata"]
+    assert not wells_missing.empty
+    assert wells_missing["count"].iloc[0] == 3  # A2, B2, C2 should be missing
+    assert set(wells_missing["wells"].iloc[0].split(";")) == {"A2", "B2", "C2"}
 
-        # Check formatting
-        assert all(report_df["count"].astype(int) >= 0)
-        assert all(report_df["issue"].astype(str).str.contains(r"^[a-z_]+$"))
-    finally:
-        # Clean up temporary file
-        if temp_meta.exists():
-            temp_meta.unlink()
+    # Check formatting
+    assert all(report_df["count"].astype(int) >= 0)
+    assert all(report_df["issue"].astype(str).str.contains(r"^[a-z_]+$"))

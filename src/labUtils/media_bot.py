@@ -4,8 +4,18 @@ from __future__ import annotations
 import re
 from io import StringIO
 from pathlib import Path
+from typing import Union
 
 import pandas as pd
+
+__all__ = [
+    'parse_raw_bmg_export',
+    'process_bmg_dataframe',
+    'parse_meta_experiment',
+    'parse',
+    'report',
+    'parse_time_label',
+]
 
 
 # ---------- helpers ----------
@@ -32,8 +42,19 @@ def parse_time_label(lbl: str):
     mnt = mnt % 60
     return h + mnt/60.0, h, mnt
 
-def read_bmg_export(path: Path) -> pd.DataFrame:
-    """Read CLARIOstar OD600 export in wide format, return tidy long dataframe."""
+def parse_raw_bmg_export(path: Path) -> pd.DataFrame:
+    """Parse CLARIOstar OD600 export and process the header to create a dataframe.
+
+    Parameters
+    ----------
+    path : Path
+        Path to the CLARIOstar OD600 export file
+
+    Returns
+    -------
+    pd.DataFrame
+        Wide format dataframe with processed headers
+    """
     text = path.read_text(encoding="utf-8", errors="ignore")
     lines = text.splitlines()
     hdr_idx = find_header_row(lines)
@@ -75,6 +96,21 @@ def read_bmg_export(path: Path) -> pd.DataFrame:
     df["well_row"] = df["well_row"].astype(str).str.strip()
     df["well_col"] = pd.to_numeric(df["well_col"], errors="coerce").astype("Int64")
 
+    return df
+
+def process_bmg_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Process a BMG dataframe to create a tidy long format dataframe.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Wide format dataframe from read_raw_bmg_export
+
+    Returns
+    -------
+    pd.DataFrame
+        Tidy long format dataframe with processed time labels and well information
+    """
     # Wide -> long
     value_vars = [c for c in df.columns if c not in ("well_row","well_col","content")]
     long_df = df.melt(id_vars=["well_row","well_col","content"], value_vars=value_vars,
@@ -105,8 +141,8 @@ def split_sections(meta_text: str):
         sections[title] = "\n".join(block)
     return sections
 
-def read_meta_experiment(meta_path: Path) -> pd.DataFrame:
-    """Read the '=== Experiment Data ===' section as a DataFrame and tidy column names."""
+def parse_meta_experiment(meta_path: Path) -> pd.DataFrame:
+    """Parse the '=== Experiment Data ===' section as a DataFrame and tidy column names."""
     text = meta_path.read_text(encoding="utf-8", errors="ignore")
     sections = split_sections(text)
     key = next((k for k in sections if "Experiment Data" in k), None)
@@ -146,11 +182,36 @@ def read_meta_experiment(meta_path: Path) -> pd.DataFrame:
     return tidy
 
 
-def parse(data_path: Path, meta_path: Path) -> pd.DataFrame:
-    """Parse raw OD600 data and metadata, return merged tidy DataFrame."""
-    raw_long = read_bmg_export(data_path)
-    meta = read_meta_experiment(meta_path)
+def parse(raw_data: Union[pd.DataFrame, Path], meta_data: Union[pd.DataFrame, Path]) -> pd.DataFrame:
+    """Parse raw OD600 data and metadata, return merged tidy DataFrame.
 
+    Parameters
+    ----------
+    raw_data : Union[pd.DataFrame, Path]
+        Either a preprocessed plate reader DataFrame from process_bmg_dataframe,
+        or a Path to a raw data file that will be processed
+    meta_data : Union[pd.DataFrame, Path]
+        Either a preprocessed metadata DataFrame from parse_meta_experiment,
+        or a Path to a metadata file that will be processed
+
+    Returns
+    -------
+    pd.DataFrame
+        Merged DataFrame with both raw data and metadata
+    """
+    # Handle file paths if provided
+    if isinstance(raw_data, Path):
+        raw_df = parse_raw_bmg_export(raw_data)
+        raw_long = process_bmg_dataframe(raw_df)
+    else:
+        raw_long = raw_data
+
+    if isinstance(meta_data, Path):
+        meta = parse_meta_experiment(meta_data)
+    else:
+        meta = meta_data
+
+    # Merge data
     df = raw_long.merge(meta, on="well", how="left", validate="m:1")
 
     ordered_cols = [
@@ -162,11 +223,34 @@ def parse(data_path: Path, meta_path: Path) -> pd.DataFrame:
     df = df[ordered_cols].copy()
     return df
 
-def report(data_path: Path, meta_path: Path) -> pd.DataFrame:
-    """Generate a validation report for the parsed data."""
-    raw_long = read_bmg_export(data_path)
-    meta = read_meta_experiment(meta_path)
+def report(raw_data: Union[pd.DataFrame, Path], meta_data: Union[pd.DataFrame, Path]) -> pd.DataFrame:
+    """Generate a validation report comparing raw data and metadata.
 
+    Parameters
+    ----------
+    raw_data : Union[pd.DataFrame, Path]
+        Either a preprocessed plate reader DataFrame from process_bmg_dataframe,
+        or a Path to a raw data file that will be processed
+    meta_data : Union[pd.DataFrame, Path]
+        Either a preprocessed metadata DataFrame from parse_meta_experiment,
+        or a Path to a metadata file that will be processed
+
+    Returns
+    -------
+    pd.DataFrame
+        Report of any issues found in the data
+    """
+    # Handle file paths if provided
+    if isinstance(raw_data, Path):
+        raw_df = parse_raw_bmg_export(raw_data)
+        raw_long = process_bmg_dataframe(raw_df)
+    else:
+        raw_long = raw_data
+
+    if isinstance(meta_data, Path):
+        meta = parse_meta_experiment(meta_data)
+    else:
+        meta = meta_data
     report_rows = []
     raw_wells = set(raw_long["well"].unique())
     meta_wells = set(meta["well"].unique())
