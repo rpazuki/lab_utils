@@ -2,7 +2,7 @@
 #  labUtils: A python package for laboratory data analysis   #
 #  and automation.                                           #
 #                                                            #
-#  Author: Roozbeh H. Pazuki                                 #
+#  Author: Roozbeh H. Pazuki - 2025                          #
 #  License: MIT                                              #
 ##############################################################
 import importlib

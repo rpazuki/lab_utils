@@ -1,4 +1,11 @@
-# parse_od600_with_metadata.py
+##############################################################
+#  labUtils: A python package for parsing od600 data with    #
+#  provided metadata                                         #
+#                                                            #
+#  Author: Roozbeh H. Pazuki - 2025                          #
+#  License: MIT                                              #
+##############################################################
+
 from __future__ import annotations
 
 import re

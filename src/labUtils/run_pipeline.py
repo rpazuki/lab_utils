@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+##############################################################
+#  labUtils: A python script to run pipelines for laboratory #
+#  data analysis and automation. The pipelines structure are #
+#  defined in a separate yaml file.                          #
+#                                                            #
+#  Author: Roozbeh H. Pazuki - 2025                          #
+#  License: MIT                                              #
+##############################################################
 """Run a pipeline from a YAML configuration file."""
 import argparse
 import logging
