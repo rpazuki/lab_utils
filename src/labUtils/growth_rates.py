@@ -50,7 +50,7 @@ def fit_modified_gompertz_per_series(
         m = np.isfinite(t) & np.isfinite(y)
         t, y = t[m], y[m]
         out: Dict[str, Any] = {"n": int(len(y))}
-        if len(y) < min_points or (float(np.nanmax(y)) - float(np.nanmin(y)) < 1e-2):
+        if len(y) < min_points or (float(np.nanmax(y)) - float(np.nanmin(y)) <= 0.2):
             out.update({"success": False, "message": "insufficient or flat data"})
             return out
 
