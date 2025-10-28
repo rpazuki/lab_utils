@@ -208,7 +208,7 @@ def parse(raw_data: Union[pd.DataFrame, Path], meta_data: Union[pd.DataFrame, Pa
     df = raw_long.merge(meta, on="well", how="left", validate="m:1")
 
     ordered_cols = [
-        "well","well_row","well_col","content","strain","is_blank","media_type","supplements",
+        "well","well_row","well_col","content","strain","strain_well","is_blank","media_type","supplements",
         "media_volume_uL","water_volume_uL","supplement_volume_uL","volume_per_supplement_uL","total_volume_uL",
         "time_label","time_h","time_min_int","time_h_int","time_min","od600"
     ]
