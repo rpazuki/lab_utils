@@ -31,6 +31,7 @@ pipelines:
                     time_col: time_h
                     group_cols:
                         - well
+                    save_plot_data: true
 
         Outputs:
             - df_parsed: parsed_data.csv

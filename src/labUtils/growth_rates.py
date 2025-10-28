@@ -8,8 +8,10 @@
 ##############################################################
 
 from math import e
-from typing import Any, Dict, List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
@@ -31,7 +33,9 @@ def fit_modified_gompertz_per_series(
     value_col: str = "od600",
     group_cols: List[str] = ["well"],
     clip_exp: float = 50.0,           # numerical safety against overflow in exp(exp(.))
-    min_points: int = 5               # require at least this many points to fit
+    min_points: int = 5,             # require at least this many points to fit
+    save_plot_data: bool = False,    # whether to save plot of the data and fit
+    output_dir: Optional[str | Path] = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Fits the modified Gompertz model to each series in `df` and returns:
@@ -118,4 +122,44 @@ def fit_modified_gompertz_per_series(
 
     params_df = pd.DataFrame(param_rows)
     preds_df = pd.concat(preds_accum, ignore_index=True)
+
+    if save_plot_data:
+        df_combined = preds_df.merge(params_df, on="well", how="left")
+        pred_col: str = "od600_fit"
+        for keys, g in df_combined.groupby(group_cols, sort=False):
+            if g['success'].iloc[0] is False or pd.isna(g['mu_max'].iloc[0]):
+                continue
+            keys = (keys,) if not isinstance(keys, tuple) else keys
+            t = g[time_col].to_numpy(dtype=float)
+            y = g[value_col].to_numpy(dtype=float)
+            y_hat = g[pred_col].to_numpy(dtype=float)
+            y_hat_hat = gompertz(t,
+                                y0=g['y0'].iloc[0],
+                                A_0=g['A'].iloc[0],
+                                mu_max=g['mu_max'].iloc[0],
+                                lam=g['lambda'].iloc[0],
+                                clip_exp=10.0)
+
+
+
+            plt.figure(figsize=(8, 5))
+            plt.plot(t, y, label=", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)), marker='o')
+            plt.plot(t, y_hat, label="Predicted", linestyle="--", color="orange")
+            plt.plot(t, y_hat_hat, label="Predicted2", linestyle="-.", color="red")
+            plt.xlabel("Time (h)")
+            plt.ylabel("OD600")
+            plt.title(f"Growth Curve for  well {keys[0]} growth_rate:{g['mu_max'].iloc[0]:.4f} 1/h")
+            plt.legend()
+
+            # Save figure instead of showing
+            filename = f"growth_curve_well_{keys[0]}.png"
+            if output_dir is not None:
+                output_dir = Path(output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                filepath = output_dir / filename
+            else:
+                filepath = filename
+            plt.savefig(filepath, dpi=300, bbox_inches='tight')
+            print(f"Saved plot: {filepath}")
+            plt.close()  # Close figure to free memory
     return params_df, preds_df

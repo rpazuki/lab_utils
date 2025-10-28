@@ -6,6 +6,7 @@
 #  License: MIT                                              #
 ##############################################################
 import importlib
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -464,7 +465,7 @@ class InputProcess(Process):
 
 
 class DFProcess(Process):
-    def __call__(self, *, payload:Dict, name:str, package:str, method:str, parameters:dict, **kwargs) -> Dict:
+    def __call__(self, *, payload:Dict, name:str, package:str, method:str, parameters:dict, output_dir:Optional[str | Path] = None, **kwargs) -> Dict:
         """DataFrame process to save data to different destinations.
 
         Parameters
@@ -494,6 +495,16 @@ class DFProcess(Process):
                 arguments[key] = payload[value]
             else:
                 arguments[key] = value
+
+        signature = inspect.signature(func)
+        if output_dir is not None:
+            if 'output_dir' in signature.parameters:
+                arguments['output_dir'] = output_dir
+            else:
+                Warning(
+                    f"The 'DFProcess' cannot pass the 'output_dir' to the method '{method}' "
+                    f"of package '{package}' because it does not accept such argument."
+                )
         data = func(**arguments)
         return Dict({**{f"{name}":data},
                      **payload})
@@ -685,7 +696,8 @@ def build_pipeline_from_yaml_string(
                         name=name,
                         package=spec['package'],
                         method=spec['method'],
-                        parameters=spec['parameters']
+                        parameters=spec['parameters'],
+                        output_dir=output_dir
                     )
                 return df_logic
 
