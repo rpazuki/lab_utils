@@ -182,7 +182,7 @@ def run_media_bot_growth_rate_pipeline(
     mapping_file: Optional[str] = None,
     raw_data_pattern: str = "mediabot*.csv",
     meta_data_pattern: str = "protocol_metadata_*.csv",
-    pipeline_yaml_path: str = "./preprocessing_pipeline.yaml",
+    pipeline_yaml_path: str = str(Path(__file__).parent / "growth_rates_pipeline.yaml"),
     output_base_dir: Optional[Union[str, Path]] = None,
     verbose: bool = True
 ) -> Dict[str, Any]:
@@ -204,7 +204,7 @@ def run_media_bot_growth_rate_pipeline(
     meta_data_pattern : str, optional
         Pattern to match metadata files (default: "protocol_metadata_*.csv")
     pipeline_yaml_path : str, optional
-        Path to the pipeline YAML configuration file (default: "./preprocessing_pipeline.yaml")
+        Path to the pipeline YAML configuration file (default: "growth_rates_pipeline.yaml")
     output_base_dir : str or Path, optional
         Base directory for output files. If None, uses "./processed" (default: None)
     verbose : bool, optional
