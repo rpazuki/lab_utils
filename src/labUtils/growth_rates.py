@@ -133,19 +133,12 @@ def fit_modified_gompertz_per_series(
             t = g[time_col].to_numpy(dtype=float)
             y = g[value_col].to_numpy(dtype=float)
             y_hat = g[pred_col].to_numpy(dtype=float)
-            y_hat_hat = gompertz(t,
-                                y0=g['y0'].iloc[0],
-                                A_0=g['A'].iloc[0],
-                                mu_max=g['mu_max'].iloc[0],
-                                lam=g['lambda'].iloc[0],
-                                clip_exp=10.0)
 
 
 
             plt.figure(figsize=(8, 5))
-            plt.plot(t, y, label=", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)), marker='o')
+            plt.scatter(t, y, label=", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)), marker='o')
             plt.plot(t, y_hat, label="Predicted", linestyle="--", color="orange")
-            plt.plot(t, y_hat_hat, label="Predicted2", linestyle="-.", color="red")
             plt.xlabel("Time (h)")
             plt.ylabel("OD600")
             plt.title(f"Growth Curve for  well {keys[0]} growth_rate:{g['mu_max'].iloc[0]:.4f} 1/h")
