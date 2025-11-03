@@ -147,9 +147,9 @@ def fit_modified_gompertz_per_series(
             # Save figure instead of showing
             filename = f"growth_curve_well_{keys[0]}.png"
             if output_dir is not None:
-                output_dir = Path(output_dir)
-                output_dir.mkdir(parents=True, exist_ok=True)
-                filepath = output_dir / filename
+                output_dir_plots = Path(output_dir) / "plots"
+                output_dir_plots.mkdir(parents=True, exist_ok=True)
+                filepath = output_dir_plots / filename
             else:
                 filepath = filename
             plt.savefig(filepath, dpi=300, bbox_inches='tight')

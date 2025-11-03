@@ -352,7 +352,8 @@ if __name__ == "__main__":
     parser.add_argument('--data-dir',
                         type=str,
                         default="",
-                        help='Absolute, relative path from DATA_DIRECTORY, or current directory path to directory containing input data files')
+                        help='Absolute, relative path from DATA_DIRECTORY, or current directory path to directory'
+                             ' containing input data files')
     parser.add_argument('--pipeline-name',
                         type=str,
                         default="pipeline_1",
@@ -360,7 +361,8 @@ if __name__ == "__main__":
     parser.add_argument('--mapping-file',
                         type=str,
                         default=None,
-                        help='Path to file containing metadata-to-raw-data mapping (CSV, YAML, or Python dict). If not provided, will use pattern-based discovery.')
+                        help='Path to file containing metadata-to-raw-data mapping (CSV, YAML, or Python dict). '
+                             'If not provided, will use pattern-based discovery.')
 
     parser.add_argument('--raw-data-pattern',
                         type=str,
