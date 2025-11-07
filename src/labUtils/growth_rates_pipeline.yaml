@@ -23,15 +23,27 @@ pipelines:
                 parameters:
                     raw_data: raw_data
                     meta_data: meta_data
+            - df_transformed:
+                package: labUtils.growth_rates
+                method: transform_to_log_n_n0
+                parameters:
+                    df: df_parsed
+                    value_col: od600
+                    OD_0_averaging_window: 4
+                    group_cols:
+                        - well
             - df_fit_modified_gompertz:
                 package: labUtils.growth_rates
                 method: fit_modified_gompertz_per_series
                 parameters:
-                    df: df_parsed
+                    df: df_transformed
                     time_col: time_h
+                    value_col: log_n_n0
                     group_cols:
                         - well
+                    y_0_fixed: 0.0
                     save_plot_data: true
+
 
         Outputs:
             - df_parsed: parsed_data.csv

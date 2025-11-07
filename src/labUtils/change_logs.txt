@@ -1,0 +1,13 @@
+
+****************************************
+Roozbeh H. Pazuki, 2025-11-07:
+
+1. Made the OD_0 definition flexible by using an argument to specify how many data point should be used. The default is one, which means OD_0 is the value at time zero.
+
+****************************************
+Roozbeh H. Pazuki, 2025-11-06:
+
+1. Applied \ln(OD/OD_0) to data before fitting.
+
+
+

@@ -458,6 +458,7 @@ class InputProcess(Process):
         method : str
             The method name within the package to use for loading the data.
         """
+        self.__name__ = f"InputProcess({name})"
         pkg = importlib.import_module(package)
         func = getattr(pkg, method)
         data = func(Path(src), **kwargs)
@@ -487,6 +488,7 @@ class DFProcess(Process):
                 return True
             except TypeError:
                 return False
+        self.__name__ = f"DFProcess({name})"
         pkg = importlib.import_module(package)
         func = getattr(pkg, method)
         arguments = {}
@@ -523,7 +525,7 @@ class OutputProcess(Process):
             dictionaries with 'package', 'method', and 'dest' keys to specify
             where and how to save each item.
         """
-
+        self.__name__ = "OutputProcess"
         for name, output_path in outputs.items():
             if isinstance(output_path, list):
                 payload_item = payload.get(name)
