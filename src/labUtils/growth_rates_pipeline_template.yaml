@@ -1,60 +1,6 @@
 # Preprocessing Pipeline Configuration for fitting the OD data
 pipelines:
-    - growth_rate_fit_pipeline:
-        Inputs:
-            - raw_data:
-                - src: EMPTY
-                - package:  labUtils.media_bot
-                - method: parse_raw_CLARIOstar_export
-                - value_column_name: od600
-            - meta_data:
-                - src: EMPTY
-                - package:  labUtils.media_bot
-                - method: parse_protocol_metadata
-        Processes:
-            - df_parsed:
-                package: labUtils.media_bot
-                method: parse
-                parameters:
-                    raw_data: raw_data
-                    meta_data: meta_data
-                    value_column_name: od600
-            - df_report:
-                package: labUtils.media_bot
-                method: report
-                parameters:
-                    raw_data: raw_data
-                    meta_data: meta_data
-                    value_column_name: od600
-            - df_transformed:
-                package: labUtils.growth_rates
-                method: transform_to_log_n_n0
-                parameters:
-                    df: df_parsed
-                    value_col: od600
-                    transformed_col: log_od_od0
-                    OD_0_averaging_window: 4 # The OD_0 is defined based on the first 4 time points
-                    group_cols:
-                        - well
-            - df_fit_modified_gompertz:
-                package: labUtils.growth_rates
-                method: fit_modified_gompertz_per_series
-                parameters:
-                    df: df_transformed
-                    time_col: time_h
-                    value_col: log_od_od0
-                    group_cols:
-                        - well
-                    y_0_fixed: 0.0
-                    save_plot_data: true
-
-
-        Outputs:
-            - df_parsed: parsed_data.csv
-            - df_report: report.csv
-            - df_fit_modified_gompertz: [growth_rates.csv, predictions.csv]
-    ##################################################################################
-    - growth_rate_replicates_fit_pipeline:
+    - pipeline_NAME:
         Inputs:
             #####################################
             # Measurment csv
@@ -136,4 +82,3 @@ pipelines:
             - df_parsed: parsed_data.csv
             - df_report: report.csv
             - df_fit_modified_gompertz: [growth_rates.csv, predictions.csv]
-    ##################################################################################

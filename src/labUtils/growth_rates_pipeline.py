@@ -48,6 +48,7 @@ import argparse
 import ast
 import logging
 import os
+import traceback
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -322,6 +323,8 @@ def run_media_bot_growth_rate_pipeline(
 
             if verbose:
                 print(f"  ✗ Error: {e}")
+                print("\nStack trace:")
+                traceback.print_exc()
             continue
 
     if verbose:

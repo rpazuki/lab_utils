@@ -28,13 +28,14 @@ def gompertz(t, y0, A_0, mu_max, lam, clip_exp):
     return y0 + A_0 * np.exp(-np.exp(z))
 
 def transform_to_log_n_n0(df: pd.DataFrame,
-                           value_col: str = "od600",
-                           group_cols: List[str] = ["well"],
-                           OD_0_averaging_window: int = 1,  # number of initial points to average for OD_0
-                           ) -> pd.DataFrame:
+                          value_col: str = "od600",
+                          transformed_col: str = "log_n_n0",
+                          group_cols: List[str] = ["well"],
+                          OD_0_averaging_window: int = 1,  # number of initial points to average for OD_0
+                          ) -> pd.DataFrame:
     """Transforms the value_col to log(n/n0) per group defined by group_cols."""
     df_transformed = df.copy()
-    df_transformed["log_n_n0"] = np.nan # Initialize the new column with NaNs
+    df_transformed[transformed_col] = np.nan # Initialize the new column with NaNs
     for keys, g in df_transformed.groupby(group_cols, sort=False):
         keys = (keys,) if not isinstance(keys, tuple) else keys
         y = g[value_col].to_numpy(dtype=float)
@@ -46,7 +47,7 @@ def transform_to_log_n_n0(df: pd.DataFrame,
         n = y_valid
         with np.errstate(divide='ignore', invalid='ignore'):
             log_n_n0 = np.where(n0 > 0, np.log(n / n0), np.nan)
-        df_transformed.loc[g.index[m], "log_n_n0"] = log_n_n0
+        df_transformed.loc[g.index[m], transformed_col] = log_n_n0
 
     return df_transformed
 
@@ -55,11 +56,12 @@ def fit_modified_gompertz_per_series(
     time_col: str = "time_h",        # or "time_min" (then your mu_max units change accordingly)
     value_col: str = "od600",
     group_cols: List[str] = ["well"],
+    standard_deviation_column: Optional[str] = None,
     clip_exp: float = 50.0,           # numerical safety against overflow in exp(exp(.))
     min_points: int = 5,             # require at least this many points to fit
     save_plot_data: bool = False,    # whether to save plot of the data and fit
+    y_0_fixed: Optional[float] = None,
     output_dir: Optional[str | Path] = None,
-    y_0_fixed: Optional[float] = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Fits the modified Gompertz model to each series in `df` and returns:
@@ -67,6 +69,12 @@ def fit_modified_gompertz_per_series(
       - preds_df: same rows as input df + columns `od600_fit` and `residual`
 
     The time column should be numeric (e.g., hours). If you use minutes, adjust interpretation of mu_max.
+
+    Parameters
+    ----------
+    standard_deviation_column : Optional[str]
+        Column name containing standard deviation values for error bars in plots.
+        Only used when save_plot_data=True.
     """
 
     def gompertz_internal(t, y0, A, mu_max, lam):
@@ -145,7 +153,7 @@ def fit_modified_gompertz_per_series(
 
         # Heuristic initial guesses
         ymax = float(np.nanpercentile(y, 95))
-        a_guess = max(ymax - y_0_fixed, 1e-3)
+        a_guess = max(ymax - y_0_fixed, 1e-3) # type: ignore
 
         if len(t) >= 3:
             dt = np.diff(t)
@@ -210,7 +218,7 @@ def fit_modified_gompertz_per_series(
     preds_df = pd.concat(preds_accum, ignore_index=True)
 
     if save_plot_data:
-        plot_and_save(preds_df, params_df, time_col, value_col, group_cols, output_dir)
+        plot_and_save(preds_df, params_df, time_col, value_col, group_cols, output_dir, standard_deviation_column)
     return params_df, preds_df
 
 
@@ -219,9 +227,17 @@ def plot_and_save(preds_df: pd.DataFrame,
                   time_col: str = "time_h",        # or "time_min" (then your mu_max units change accordingly)
                   value_col: str = "od600",
                   group_cols: List[str] = ["well"],
-                  output_dir: Optional[str | Path] = None):
-    """Plots and saves growth curves with fitted model for each series."""
-    df_combined = preds_df.merge(params_df, on="well", how="left")
+                  output_dir: Optional[str | Path] = None,
+                  standard_deviation_column: Optional[str] = None):
+    """Plots and saves growth curves with fitted model for each series.
+
+    Parameters
+    ----------
+    standard_deviation_column : Optional[str]
+        Column name containing standard deviation values for error bars.
+        If provided, error bars will be added to the scatter plot.
+    """
+    df_combined = preds_df.merge(params_df, on=group_cols, how="left")
     pred_col: str = "od600_fit"
     for keys, g in df_combined.groupby(group_cols, sort=False):
         if g['success'].iloc[0] is False or pd.isna(g['mu_max'].iloc[0]):
@@ -231,10 +247,18 @@ def plot_and_save(preds_df: pd.DataFrame,
         y = g[value_col].to_numpy(dtype=float)
         y_hat = g[pred_col].to_numpy(dtype=float)
 
-
+        # Get standard deviation if provided
+        yerr = None
+        if standard_deviation_column is not None and standard_deviation_column in g.columns:
+            yerr = g[standard_deviation_column].to_numpy(dtype=float)
 
         plt.figure(figsize=(8, 5))
-        plt.scatter(t, y, label=", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)), marker='o')
+        if yerr is not None:
+            plt.errorbar(t, y, yerr=yerr, fmt='.',
+                        label=", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)),
+                        capsize=3, capthick=1, elinewidth=1)
+        else:
+            plt.scatter(t, y, label=", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)), marker='.')
         plt.plot(t, y_hat, label="Predicted", linestyle="--", color="orange")
         plt.xlabel("Time (h)")
         plt.ylabel(r"$\ln(OD/OD_0)$")

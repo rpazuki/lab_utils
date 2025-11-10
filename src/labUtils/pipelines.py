@@ -8,6 +8,7 @@
 import importlib
 import inspect
 import logging
+# import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, TypeVar
@@ -458,7 +459,6 @@ class InputProcess(Process):
         method : str
             The method name within the package to use for loading the data.
         """
-        self.__name__ = f"InputProcess({name})"
         pkg = importlib.import_module(package)
         func = getattr(pkg, method)
         data = func(Path(src), **kwargs)
@@ -466,7 +466,15 @@ class InputProcess(Process):
 
 
 class DFProcess(Process):
-    def __call__(self, *, payload:Dict, name:str, package:str, method:str, parameters:dict, output_dir:Optional[str | Path] = None, **kwargs) -> Dict:
+    def __call__(self,
+                 *,
+                 payload:Dict,
+                 name:str,
+                 package:str,
+                 method:str,
+                 parameters:dict,
+                 output_dir:Optional[str | Path] = None,
+                 **kwargs) -> Dict:
         """DataFrame process to save data to different destinations.
 
         Parameters
@@ -488,7 +496,6 @@ class DFProcess(Process):
                 return True
             except TypeError:
                 return False
-        self.__name__ = f"DFProcess({name})"
         pkg = importlib.import_module(package)
         func = getattr(pkg, method)
         arguments = {}
@@ -497,16 +504,16 @@ class DFProcess(Process):
                 arguments[key] = payload[value]
             else:
                 arguments[key] = value
-
         signature = inspect.signature(func)
         if output_dir is not None:
             if 'output_dir' in signature.parameters:
                 arguments['output_dir'] = output_dir
-            else:
-                Warning(
-                    f"The 'DFProcess' cannot pass the 'output_dir' to the method '{method}' "
-                    f"of package '{package}' because it does not accept such argument."
-                )
+            # else:
+            #     warnings.warn(
+            #         f"The 'DFProcess' cannot pass the 'output_dir' to the method '{method}' "
+            #         f"of package '{package}' because it does not accept such argument."
+            #     )
+        data = func(**arguments)
         data = func(**arguments)
         return Dict({**{f"{name}":data},
                      **payload})
@@ -525,12 +532,11 @@ class OutputProcess(Process):
             dictionaries with 'package', 'method', and 'dest' keys to specify
             where and how to save each item.
         """
-        self.__name__ = "OutputProcess"
         for name, output_path in outputs.items():
             if isinstance(output_path, list):
                 payload_item = payload.get(name)
                 if payload_item is None:
-                        continue
+                    continue
                 for i, output_spec in enumerate(output_path):
                     if isinstance(payload_item[i], DataFrame):
                         payload_item[i].to_csv(output_spec)
@@ -664,14 +670,14 @@ def build_pipeline_from_yaml_string(
 
             # Create a ProcessLogic wrapper for InputProcess
             def make_input_process(name, params):
-                def input_logic(**kwargs):
+                def input_logic(**_kwargs):
                     input_proc = InputProcess()
                     return input_proc(
                         name=name,
                         src=params['src'],
                         package=params['package'],
                         method=params['method'],
-                        **{k: v for k, v in params.items() if k not in ['src', 'package', 'method']}
+                        **{k: v for k, v in params.items() if k not in ['src', 'package', 'method']},
                     )
                 return input_logic
 
