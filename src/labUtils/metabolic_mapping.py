@@ -55,7 +55,9 @@ def create_supplement_exchange_matrix(
     supplement_to_exchange_map: Dict[str, str],
     supplement_column: str = "supplements",
     growth_rate_column: str = "mu_max",
+    success_column: str = "success",
     baseline_exchanges: Optional[List[str]] = None,
+    custom_mapping: Optional[Dict[str, str]] = None,
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
 ) -> pd.DataFrame:
@@ -80,11 +82,17 @@ def create_supplement_exchange_matrix(
         or use load_default_iml1515_mapping() for a curated E. coli mapping.
     supplement_column : str
         Name of the column containing supplement information (default: "supplements")
+    success_column : str
+        Name of the column containing success status (default: "success")
     growth_rate_column : str
         Name of the column containing growth rate values (default: "mu_max")
     baseline_exchanges : Optional[List[str]]
         List of exchange reactions that are always present (minimal media components).
         These will be set to 1 for all rows.
+    custom_mapping : Optional[Dict[str, str]]
+        User-defined mapping that takes precedence over supplement_to_exchange_map.
+        Use this to override specific mappings or add custom supplement names.
+        Example: {"my_glucose": "EX_glc__D_e", "special_carbon": "EX_custom_e"}
     separator : str
         Character used to separate multiple supplements in the supplement column (default: ";")
     fuzzy_threshold : float
@@ -110,6 +118,15 @@ def create_supplement_exchange_matrix(
     ...     supplement_to_exchange_map=mapping,
     ...     baseline_exchanges=baseline
     ... )
+    >>>
+    >>> # With custom overrides
+    >>> custom = {"weird_glucose": "EX_glc__D_e"}
+    >>> matrix = create_supplement_exchange_matrix(
+    ...     growth_rates_df,
+    ...     supplement_to_exchange_map=mapping,
+    ...     custom_mapping=custom,
+    ...     baseline_exchanges=baseline
+    ... )
 
     Notes
     -----
@@ -119,13 +136,22 @@ def create_supplement_exchange_matrix(
     - Unmapped supplements trigger a warning with details
     - Baseline exchanges are always set to 1 for all rows
     - Growth rate column name is preserved as specified in growth_rate_column parameter
+    - Custom mapping takes precedence over supplement_to_exchange_map for matching
     """
     # Normalize mapping keys (lowercase, stripped)
+    # Start with base mapping, then apply custom mapping (which takes precedence)
     normalized_map: Dict[str, str] = {}
     for k, v in supplement_to_exchange_map.items():
         if k is None:
             continue
         normalized_map[k.strip().lower()] = v
+
+    # Apply custom mapping overrides
+    if custom_mapping:
+        for k, v in custom_mapping.items():
+            if k is None:
+                continue
+            normalized_map[k.strip().lower()] = v
 
     # Collect unique supplements from the dataframe
     unique_supplements = set()
@@ -164,7 +190,11 @@ def create_supplement_exchange_matrix(
 
     # Build rows
     rows: List[Dict[str, Union[int, float, None]]] = []
-    for idx, row in growth_rates_df.iterrows():
+    for _, row in growth_rates_df.iterrows():
+        # Skip rows where success column exists and is False
+        if success_column in growth_rates_df.columns and not row[success_column]:
+            continue
+
         r: Dict[str, Union[int, float, None]] = {ex: 0 for ex in all_exchanges}
 
         # baseline -> always 1 if provided

@@ -551,7 +551,7 @@ class OutputProcess(Process):
                     continue
 
                 if isinstance(payload_item, DataFrame):
-                    payload_item.to_csv(output_path)
+                    payload_item.to_csv(output_path, index=False)
                     continue
 
                 raise IncompatibleArgsException(
