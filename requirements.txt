@@ -2,3 +2,4 @@ pandas
 scipy
 addict
 pyyaml
+cobra

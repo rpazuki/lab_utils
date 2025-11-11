@@ -1,5 +1,7 @@
 # Preprocessing Pipeline Configuration for fitting the OD data
 pipelines:
+    ##################################################################################
+    # Basic growth rate fitting pipeline
     - growth_rate_fit_pipeline:
         Inputs:
             - raw_data:
@@ -46,14 +48,28 @@ pipelines:
                     group_cols:
                         - well
                     y_0_fixed: 0.0
+            - df_predict_modified_gompertz:
+                package: labUtils.growth_rates
+                method: predict_modified_gompertz_per_series
+                parameters:
+                    df: df_transformed
+                    params_df: df_fit_modified_gompertz
+                    time_col: time_h
+                    value_col: log_od_od0
+                    group_cols:
+                        - well
                     save_plot_data: true
 
 
         Outputs:
             - df_parsed: parsed_data.csv
             - df_report: report.csv
-            - df_fit_modified_gompertz: [growth_rates.csv, predictions.csv]
+            - df_transformed: transformed_data.csv
+            - df_fit_modified_gompertz: growth_rates.csv
+            - df_predict_modified_gompertz: predictions.csv
+
     ##################################################################################
+    # Growth rate fitting pipeline with replicate statistics
     - growth_rate_replicates_fit_pipeline:
         Inputs:
             #####################################
@@ -120,13 +136,122 @@ pipelines:
                     df: df_transformed # The 'df_transformed' that was created above
                     time_col: time_h # The column name for time values in df_transformed dataframe
                     value_col: log_od_od0 # The column name for transformed log(OD/OD_0) values in df_transformed dataframe
-                    standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
                     clip_exp: 50.0 # numerical safety against overflow in exp(exp(.))
                     min_points: 5 # require at least this many points to fit
                     group_cols: # columns defining each growth series
                         - group_id
-                    save_plot_data: true # whether to save plot of the data and fit
                     y_0_fixed: 0.0 # Fix y_0 to 0.0
+            #####################################
+            # Predict modified Gompertz model to each growth series
+            - df_predict_modified_gompertz:
+                package: labUtils.growth_rates
+                method: predict_modified_gompertz_per_series
+                parameters:
+                    df: df_transformed # The 'df_transformed' that was created above
+                    params_df: df_fit_modified_gompertz
+                    time_col: time_h # The column name for time values in df_transformed dataframe
+                    value_col: log_od_od0 # The column name for transformed log(OD/OD_0) values in df_transformed dataframe
+                    standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
+                    group_cols: # columns defining each growth series
+                        - group_id
+                    save_plot_data: true
+
+        Outputs:
+            #####################################
+            # List of output dataframes to save
+            # to csv files
+            - df_parsed: parsed_data.csv
+            - df_report: report.csv
+            - df_fit_modified_gompertz: growth_rates.csv
+            - df_predict_modified_gompertz: predictions.csv
+
+    ##################################################################################
+    # Growth rate fitting pipeline with post-fit replicate statistics
+    - growth_rate_post_replicates_fit_pipeline:
+        Inputs:
+            #####################################
+            # Measurment csv
+            - raw_data:
+                - src: EMPTY
+                - package:  labUtils.media_bot
+                - method: parse_raw_CLARIOstar_export
+                - value_column_name: od600
+            # Protocol metadata csv
+            - meta_data:
+                - src: EMPTY
+                - package:  labUtils.media_bot
+                - method: parse_protocol_metadata
+        Processes:
+            #####################################
+            # Parse raw data and metadata into
+            # a tidy dataframe
+            - df_parsed: # output dataframe name
+                package: labUtils.media_bot
+                method: parse
+                parameters:
+                    raw_data: raw_data # The 'raw_data' input defined above
+                    meta_data: meta_data # The 'meta_data' input defined above
+                    value_column_name: od600 # The column name for OD values in output dataframe
+            #####################################
+            # Generate a report summarizing the raw data
+            - df_report:  # output dataframe name
+                package: labUtils.media_bot
+                method: report
+                parameters:
+                    raw_data: raw_data # The 'raw_data' input defined above
+                    meta_data: meta_data # The 'meta_data' input defined above
+                    value_column_name: od600 # The column name for OD values in output dataframe
+            #####################################
+            # Transform OD to log(OD/OD_0)
+            - df_transformed:  # output dataframe name
+                package: labUtils.growth_rates
+                method: transform_to_log_n_n0
+                parameters:
+                    df: df_parsed # The 'df_parsed' that was created above
+                    value_col: od600 # The column name for OD values in df_parsed dataframe
+                    transformed_col: log_od_od0 # The column name for transformed log(OD/OD_0) values in output dataframe
+                    OD_0_averaging_window: 4 # The OD_0 is defined based on the first 4 time points
+                    group_cols: # columns defining each growth series
+                        - well
+            #####################################
+            # Fit modified Gompertz model to each growth series
+            - df_fit_modified_gompertz:  # output dataframe name
+                package: labUtils.growth_rates
+                method: fit_modified_gompertz_per_series
+                parameters:
+                    df: df_transformed # The 'df_transformed' that was created above
+                    time_col: time_h # The column name for time values in df_transformed dataframe
+                    value_col: log_od_od0 # The column name for transformed log(OD/OD_0) values in df_transformed dataframe
+                    clip_exp: 50.0 # numerical safety against overflow in exp(exp(.))
+                    min_points: 5 # require at least this many points to fit
+                    group_cols: # columns defining each growth series
+                        - well
+                    y_0_fixed: 0.0 # Fix y_0 to 0.0
+            #####################################
+            # Predict modified Gompertz model to each growth series
+            - df_predict_modified_gompertz:
+                package: labUtils.growth_rates
+                method: predict_modified_gompertz_per_series
+                parameters:
+                    df: df_transformed # The 'df_transformed' that was created above
+                    params_df: df_fit_modified_gompertz
+                    time_col: time_h # The column name for time values in df_transformed dataframe
+                    value_col: log_od_od0 # The column name for transformed log(OD/OD_0) values in df_transformed dataframe
+                    # standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
+                    group_cols: # columns defining each growth series
+                        - well
+                    save_plot_data: true
+            #####################################
+            # Calculate replicates statistics
+            - df_replicate_stats:  # output dataframe name
+                package: labUtils.media_bot
+                method: calculate_replicate_statistics
+                parameters:
+                    df_parsed: df_fit_modified_gompertz # The 'df_fit_modified_gompertz' that was created above
+                    direction: alphabetical # along A, B, C, ...
+                    sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                    ddof: 0 # Biased std
+                    value_column_name: mu_max # The column name for OD values in df_fit_modified_gompertz dataframe
 
 
         Outputs:
@@ -135,5 +260,60 @@ pipelines:
             # to csv files
             - df_parsed: parsed_data.csv
             - df_report: report.csv
-            - df_fit_modified_gompertz: [growth_rates.csv, predictions.csv]
+            - df_replicate_stats: growth_rates.csv
+            - df_predict_modified_gompertz: predictions.csv
     ##################################################################################
+    #
+    - AMN_build_dataset_pipeline:
+        Inputs:
+            #####################################
+            # grothwth measurment csv
+            - growth_data::
+                - src: EMPTY
+                - package:  labUtils.utils
+                - method: read_csv
+            # SBML model file
+            - model_sbml:
+                - src: EMPTY
+                - package:  labUtils.metabolic_mapping
+                - method: parse_sbml_exchanges
+
+        Processes:
+            #####################################
+            # Parse raw data and metadata into
+            # a tidy dataframe
+            - df_amn_dataset: # output dataframe name
+                package: labUtils.metabolic_mapping
+                method: create_supplement_exchange_matrix
+                parameters:
+                    growth_rates_df: growth_data # The 'growth_data' input defined above
+                    supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
+                    supplement_column: supplements # The column name for OD values in output dataframe
+                    growth_rate_column: mu_max # The column name for OD values in output dataframe
+                    baseline_exchanges: #
+                        - EX_pi_e_i
+                        - EX_co2_e_i
+                        - EX_fe3_e_i
+                        - EX_h_e_i
+                        - EX_mn2_e_i
+                        - EX_fe2_e_i
+                        - EX_zn2_e_i
+                        - EX_mg2_e_i
+                        - EX_ca2_e_i
+                        - EX_ni2_e_i
+                        - EX_cu2_e_i
+                        - EX_sel_e_i
+                        - EX_cobalt2_e_i
+                        - EX_h2o_e_i
+                        - EX_mobd_e_i
+                        - EX_so4_e_i
+                        - EX_nh4_e_i
+                        - EX_k_e_i
+                    separator: ; #
+                    fuzzy_threshold: 0.6 # The column name for OD values in output dataframe
+
+        Outputs:
+            #####################################
+            # List of output dataframes to save
+            # to csv files
+            - df_amn_dataset: df_amn_dataset.csv

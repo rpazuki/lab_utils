@@ -514,7 +514,6 @@ class DFProcess(Process):
             #         f"of package '{package}' because it does not accept such argument."
             #     )
         data = func(**arguments)
-        data = func(**arguments)
         return Dict({**{f"{name}":data},
                      **payload})
 

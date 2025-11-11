@@ -9,7 +9,7 @@
 
 from math import e
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -56,25 +56,41 @@ def fit_modified_gompertz_per_series(
     time_col: str = "time_h",        # or "time_min" (then your mu_max units change accordingly)
     value_col: str = "od600",
     group_cols: List[str] = ["well"],
-    standard_deviation_column: Optional[str] = None,
     clip_exp: float = 50.0,           # numerical safety against overflow in exp(exp(.))
     min_points: int = 5,             # require at least this many points to fit
-    save_plot_data: bool = False,    # whether to save plot of the data and fit
     y_0_fixed: Optional[float] = None,
-    output_dir: Optional[str | Path] = None,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     """
-    Fits the modified Gompertz model to each series in `df` and returns:
-      - params_df: one row per series (group), with y0, A, mu_max, lambda, r2, rmse, n, success, message
-      - preds_df: same rows as input df + columns `od600_fit` and `residual`
-
-    The time column should be numeric (e.g., hours). If you use minutes, adjust interpretation of mu_max.
+    Fits the modified Gompertz model to each series in `df` and returns the fit parameters.
 
     Parameters
     ----------
-    standard_deviation_column : Optional[str]
-        Column name containing standard deviation values for error bars in plots.
-        Only used when save_plot_data=True.
+    df : pd.DataFrame
+        Input DataFrame with time series data
+    time_col : str
+        Column name for time values (default: "time_h")
+    value_col : str
+        Column name for measured values (default: "od600")
+    group_cols : List[str]
+        Columns to group by (default: ["well"])
+    clip_exp : float
+        Numerical safety parameter against overflow in exp(exp(.)) (default: 50.0)
+    min_points : int
+        Minimum number of points required to fit (default: 5)
+    y_0_fixed : Optional[float]
+        If provided, fixes y0 parameter to this value (default: None)
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with one row per series (group), containing:
+        - Group columns (e.g., well)
+        - y0, A, mu_max, lambda: Fit parameters
+        - r2, rmse: Goodness of fit metrics
+        - n: Number of data points
+        - success: Whether fit was successful
+        - message: Status or error message
+        - Metadata columns from original data
     """
 
     def gompertz_internal(t, y0, A, mu_max, lam):
@@ -198,7 +214,14 @@ def fit_modified_gompertz_per_series(
 
     # Fit each series
     param_rows = []
-    preds_accum = []
+
+    # Identify time-related columns that should be excluded from metadata
+    time_related_cols = ["time_label", "time_h", "time_min", "time_h_int", "time_min_int"]
+
+    # Identify metadata columns (all columns except group_cols, time_cols, value_col, well position cols)
+    exclude_cols = set(group_cols + time_related_cols + [time_col, value_col])
+    metadata_cols = [col for col in df.columns if col not in exclude_cols]
+
     for keys, g in df.groupby(group_cols, sort=False):
         keys = (keys,) if not isinstance(keys, tuple) else keys
         if y_0_fixed is not None:
@@ -207,19 +230,104 @@ def fit_modified_gompertz_per_series(
             result = fit_one(g)
         row = {col: val for col, val in zip(group_cols, keys)}
         row.update({k: v for k, v in result.items() if k != "pred"})
+
+        # Add metadata from the first row of the group
+        first_row = g.iloc[0]
+        for col in metadata_cols:
+            if col in first_row.index:
+                row[col] = first_row[col]
+
         param_rows.append(row)
 
+    params_df = pd.DataFrame(param_rows)
+
+    return params_df
+
+
+def predict_modified_gompertz_per_series(
+    df: pd.DataFrame,
+    params_df: pd.DataFrame,
+    time_col: str = "time_h",
+    value_col: str = "od600",
+    group_cols: List[str] = ["well"],
+    clip_exp: float = 50.0,
+    save_plot_data: bool = False,
+    output_dir: Optional[str | Path] = None,
+    standard_deviation_column: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Calculate predictions and residuals using fitted Gompertz parameters.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame with time series data (same as used for fitting)
+    params_df : pd.DataFrame
+        DataFrame with fitted parameters from fit_modified_gompertz_per_series
+    time_col : str
+        Column name for time values (default: "time_h")
+    value_col : str
+        Column name for measured values (default: "od600")
+    group_cols : List[str]
+        Columns to group by (default: ["well"])
+    clip_exp : float
+        Numerical safety parameter against overflow (default: 50.0)
+    save_plot_data : bool
+        Whether to save plots of the data and fit (default: False)
+    output_dir : Optional[str | Path]
+        Directory to save plots (default: None)
+    standard_deviation_column : Optional[str]
+        Column name containing standard deviation values for error bars in plots (default: None)
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with same rows as input df plus columns:
+        - od600_fit: Predicted values
+        - residual: Difference between measured and predicted values
+    """
+    def gompertz_internal(t, y0, A, mu_max, lam):
+        return gompertz(t, y0, A, mu_max, lam, clip_exp)
+
+    preds_accum = []
+
+    for keys, g in df.groupby(group_cols, sort=False):
+        keys = (keys,) if not isinstance(keys, tuple) else keys
+
+        # Get parameters for this group
+        param_filter = params_df
+        for col, val in zip(group_cols, keys):
+            param_filter = param_filter[param_filter[col] == val]
+
+        if len(param_filter) == 0:
+            # No parameters found for this group, skip
+            h = g.copy()
+            h["od600_fit"] = np.nan
+            h["residual"] = np.nan
+            preds_accum.append(h)
+            continue
+
+        param_row = param_filter.iloc[0]
+
+        # Generate predictions
+        t = g[time_col].to_numpy(dtype=float)
+        if param_row["success"]:
+            pred = gompertz_internal(t, param_row["y0"], param_row["A"],
+                                   param_row["mu_max"], param_row["lambda"])
+        else:
+            pred = np.full(len(g), np.nan)
+
         h = g.copy()
-        h["od600_fit"] = result.get("pred", np.full(len(g), np.nan))
+        h["od600_fit"] = pred
         h["residual"] = h[value_col] - h["od600_fit"]
         preds_accum.append(h)
 
-    params_df = pd.DataFrame(param_rows)
     preds_df = pd.concat(preds_accum, ignore_index=True)
 
     if save_plot_data:
         plot_and_save(preds_df, params_df, time_col, value_col, group_cols, output_dir, standard_deviation_column)
-    return params_df, preds_df
+
+    return preds_df
 
 
 def plot_and_save(preds_df: pd.DataFrame,
@@ -237,12 +345,31 @@ def plot_and_save(preds_df: pd.DataFrame,
         Column name containing standard deviation values for error bars.
         If provided, error bars will be added to the scatter plot.
     """
-    df_combined = preds_df.merge(params_df, on=group_cols, how="left")
+    # Only merge the fit parameters, not metadata columns that already exist in preds_df
+    fit_cols = group_cols + ["y0", "A", "mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
+    params_to_merge = params_df[[col for col in fit_cols if col in params_df.columns]]
+    df_combined = preds_df.merge(params_to_merge, on=group_cols, how="left")
+
     pred_col: str = "od600_fit"
-    for keys, g in df_combined.groupby(group_cols, sort=False):
+
+    # Get unique groups to avoid duplicates
+    unique_groups = df_combined[group_cols].drop_duplicates()
+
+    for idx, (_, group_row) in enumerate(unique_groups.iterrows()):
+        # Filter data for this specific group
+        mask = True
+        for col in group_cols:
+            mask = mask & (df_combined[col] == group_row[col])
+        g = df_combined[mask]
+
         if g['success'].iloc[0] is False or pd.isna(g['mu_max'].iloc[0]):
             continue
-        keys = (keys,) if not isinstance(keys, tuple) else keys
+
+        keys = tuple(group_row[col] for col in group_cols)
+        if len(keys) == 1:
+            keys = keys[0]
+
+
         t = g[time_col].to_numpy(dtype=float)
         y = g[value_col].to_numpy(dtype=float)
         y_hat = g[pred_col].to_numpy(dtype=float)
@@ -255,21 +382,26 @@ def plot_and_save(preds_df: pd.DataFrame,
         plt.figure(figsize=(8, 5))
         if yerr is not None:
             plt.errorbar(t, y, yerr=yerr, fmt='.',
-                        label=", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)),
+                        label=f"{group_cols[0]}={keys}" if not isinstance(keys, tuple) else ", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)),
                         capsize=3, capthick=1, elinewidth=1)
         else:
-            plt.scatter(t, y, label=", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)), marker='.')
+            plt.scatter(t, y,
+                       label=f"{group_cols[0]}={keys}" if not isinstance(keys, tuple) else ", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)),
+                       marker='.')
         plt.plot(t, y_hat, label="Predicted", linestyle="--", color="orange")
         plt.xlabel("Time (h)")
         plt.ylabel(r"$\ln(OD/OD_0)$")
-        plt.title(f"Growth Curve for  well {keys[0]} growth_rate:{g['mu_max'].iloc[0]:.4f} 1/h \n"
+
+        # Get the first key value for filename and title
+        first_key = keys if not isinstance(keys, tuple) else keys[0]
+        plt.title(f"Growth Curve for  well {first_key} growth_rate:{g['mu_max'].iloc[0]:.4f} 1/h \n"
                   f"y0={g['y0'].iloc[0]:.3f}, A={g['A'].iloc[0]:.3f}, lambda={g['lambda'].iloc[0]:.3f}")
         plt.legend()
         # plt.ylim(bottom=0)
         plt.grid(True)
 
         # Save figure instead of showing
-        filename = f"growth_curve_well_{keys[0]}.png"
+        filename = f"growth_curve_well_{first_key}.png"
         if output_dir is not None:
             output_dir_plots = Path(output_dir) / "plots"
             output_dir_plots.mkdir(parents=True, exist_ok=True)
@@ -279,3 +411,4 @@ def plot_and_save(preds_df: pd.DataFrame,
         plt.savefig(filepath, dpi=300, bbox_inches='tight')
         print(f"Saved plot: {filepath}")
         plt.close()  # Close figure to free memory
+
