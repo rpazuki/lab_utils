@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 """Example: Process multiple files through the same pipeline."""
+# pylint: disable=broad-except  # Test script: continue on errors to see all results
+
 from pathlib import Path
 
-from labUtils.pipelines import build_pipeline_from_yaml
+from labUtils.utils import build_pipeline_from_yaml
 
 # Directory containing input files
 data_dir = Path("data")
@@ -34,7 +36,7 @@ for raw_file in raw_data_files:
 
     try:
         # Build pipeline with overridden inputs
-        pipeline = build_pipeline_from_yaml(
+        pipeline, _ = build_pipeline_from_yaml(
             yaml_config,
             pipeline_name,
             output_dir=output_dir,

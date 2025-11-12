@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 """Example: Process a single file with input override."""
-from pathlib import Path
 
-from labUtils.pipelines import build_pipeline_from_yaml
+from labUtils.utils import build_pipeline_from_yaml
 
 # Example 1: Use default sources from YAML
 print("Example 1: Using default sources from YAML")
@@ -10,7 +9,7 @@ pipeline = build_pipeline_from_yaml(
     'src/labUtils/pipeline_temp.yaml',
     'pipeline_1'
 )
-print(f"✓ Pipeline created with default inputs\n")
+print("✓ Pipeline created with default inputs\n")
 
 # Example 2: Override one input source
 print("Example 2: Override raw_data input")
@@ -19,7 +18,7 @@ pipeline = build_pipeline_from_yaml(
     'pipeline_1',
     input_sources={'raw_data': 'tests/alternative_data.csv'}
 )
-print(f"✓ Pipeline created with raw_data override\n")
+print("✓ Pipeline created with raw_data override\n")
 
 # Example 3: Override multiple inputs and set output directory
 print("Example 3: Override multiple inputs + output directory")
@@ -32,7 +31,7 @@ pipeline = build_pipeline_from_yaml(
         'meta_data': 'data/experiment_001_meta.csv'
     }
 )
-print(f"✓ Pipeline created with multiple overrides\n")
+print("✓ Pipeline created with multiple overrides\n")
 
 print("="*60)
 print("Command-line usage examples:")
