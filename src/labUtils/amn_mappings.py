@@ -221,8 +221,8 @@ def create_supplement_exchange_matrix(
 
         print("\n" + "="*70 + "\n")
 
-    if unmapped:
-        warnings.warn(f"The following supplements could not be mapped to exchange reactions: {unmapped}")
+    # if unmapped:
+    #     warnings.warn(f"The following supplements could not be mapped to exchange reactions: {unmapped}")
 
     # Define all exchange columns: mapped reactions + baseline_exchanges
     mapped_rxns = sorted(set(supplement_to_rxn.values()))
