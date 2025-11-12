@@ -4,8 +4,10 @@ Test SBML parsing with iML1515 E. coli model.
 This script downloads the iML1515 model from BiGG Models database
 and validates the SBML parsing functionality.
 """
+# pylint: disable=broad-except  # Test script: continue on errors to see all results
 
 import tempfile
+import traceback
 import urllib.request
 from pathlib import Path
 
@@ -100,7 +102,6 @@ def test_sbml_parsing():
 
     except Exception as e:
         print(f"   Error in get_supplement_mapping: {e}")
-        import traceback
         traceback.print_exc()
 
     # Test create_supplement_exchange_matrix
@@ -119,7 +120,7 @@ def test_sbml_parsing():
         )
 
         print(f"\n   Matrix shape: {matrix.shape}")
-        print(f"\n   First few rows:")
+        print("\n   First few rows:")
         print(matrix.head())
 
         print(f"\n   Column names ({len(matrix.columns)} total):")
@@ -130,7 +131,7 @@ def test_sbml_parsing():
                 break
 
         # Check which supplements got mapped
-        print(f"\n   Supplement columns (non-baseline):")
+        print("\n   Supplement columns (non-baseline):")
         baseline_set = set(baseline[:5])
         supp_cols = [col for col in matrix.columns if col not in baseline_set and col != 'mu_max']
         for col in supp_cols:
@@ -138,7 +139,6 @@ def test_sbml_parsing():
 
     except Exception as e:
         print(f"   Error in create_supplement_exchange_matrix: {e}")
-        import traceback
         traceback.print_exc()
 
     # Test with manual mapping override
@@ -164,7 +164,6 @@ def test_sbml_parsing():
 
     except Exception as e:
         print(f"   Error with manual override: {e}")
-        import traceback
         traceback.print_exc()
 
     print("\n" + "=" * 70)

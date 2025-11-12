@@ -5,7 +5,6 @@ This script demonstrates how to create a supplement-to-exchange reaction matrix
 from growth rate data.
 """
 
-from pathlib import Path
 
 import pandas as pd
 

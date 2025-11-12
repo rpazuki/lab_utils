@@ -49,6 +49,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
+# pylint: disable=import-outside-toplevel
+
 
 def create_supplement_exchange_matrix(
     growth_rates_df: pd.DataFrame,
@@ -367,10 +369,10 @@ def parse_sbml_exchanges(sbml_path: Union[str, Path]) -> Dict[str, str]:
 
     except ImportError:
         print("Warning: COBRApy not available, attempting XML parsing")
-        return parse_sbml_exchanges_fallback(sbml_path)
+        return _parse_sbml_exchanges_fallback(sbml_path)
 
 
-def parse_sbml_exchanges_fallback(sbml_path: Union[str, Path]) -> Dict[str, str]:
+def _parse_sbml_exchanges_fallback(sbml_path: Union[str, Path]) -> Dict[str, str]:
     """
     Fallback XML parser for SBML files when COBRApy is not available.
 
@@ -405,6 +407,254 @@ def parse_sbml_exchanges_fallback(sbml_path: Union[str, Path]) -> Dict[str, str]
                 mapping[name.lower()] = rxn_id
 
     return mapping
+
+
+def create_exchange_bounds_template(
+    exchange_matrix: pd.DataFrame,
+    growth_rate_column: str = "mu_max",
+    default_level: int = 1,
+    default_max_value: int = 1000,
+    sbml_bounds: Optional[Dict[str, Tuple[int, int]]] = None,
+    custom_bounds: Optional[Dict[str, Tuple[int, int]]] = None,
+) -> pd.DataFrame:
+    """
+    Create a template dataframe for exchange reaction bounds configuration.
+
+    This function generates a configuration template with predefined values for
+    level, max_value, and ratio_drawing parameters for all exchange reactions
+    in the input matrix (excluding the growth rate column).
+
+    Parameters
+    ----------
+    exchange_matrix : pd.DataFrame
+        Output from create_supplement_exchange_matrix containing exchange reactions
+        as columns and growth rate as the last column
+    growth_rate_column : str
+        Name of the growth rate column to exclude (default: "mu_max")
+    default_level : int
+        Default value for the "level" row (default: 1)
+    default_max_value : int
+        Default value for the "max_value" row (default: 1000)
+    sbml_bounds : Optional[Dict[str, Tuple[int, int]]]
+        Bounds extracted from SBML file using parse_sbml_exchange_bounds().
+        Dictionary mapping exchange reaction IDs to (level, max_value) tuples.
+        Example: {"EX_glc__D_e": (1, 500), "EX_o2_e_i": (1, 2000)}
+        These are used if a column is not in custom_bounds.
+    custom_bounds : Optional[Dict[str, Tuple[int, int]]]
+        Custom bounds for specific exchange reactions (highest priority).
+        Dictionary mapping exchange reaction IDs to (level, max_value) tuples.
+        Example: {"EX_glc__D_e": (2, 500), "EX_o2_e_i": (1, 2000)}
+        Takes precedence over sbml_bounds and defaults.
+
+    Returns
+    -------
+    pd.DataFrame
+        Configuration dataframe with columns:
+        - "name": Row identifier ("level", "max_value", "ratio_drawing")
+        - Exchange reaction columns: Values for each reaction
+
+    Examples
+    --------
+    >>> # Create exchange matrix
+    >>> matrix = create_supplement_exchange_matrix(growth_df, mapping)
+    >>>
+    >>> # Scenario 1: Generate bounds template with defaults
+    >>> bounds = create_exchange_bounds_template(matrix)
+    >>> print(bounds)
+             name  EX_glc__D_e  EX_o2_e_i  ...
+    0       level            1          1  ...
+    1   max_value         1000       1000  ...
+    2  ratio_drawing         0          0  ...
+    >>>
+    >>> # Scenario 2: With custom defaults
+    >>> bounds = create_exchange_bounds_template(
+    ...     matrix,
+    ...     default_level=2,
+    ...     default_max_value=500
+    ... )
+    >>>
+    >>> # Scenario 3: Use SBML bounds
+    >>> sbml_bounds = parse_sbml_exchange_bounds("iML1515.xml")
+    >>> bounds = create_exchange_bounds_template(
+    ...     matrix,
+    ...     sbml_bounds=sbml_bounds
+    ... )
+    >>>
+    >>> # Scenario 4: SBML bounds + custom overrides
+    >>> sbml_bounds = parse_sbml_exchange_bounds("iML1515.xml")
+    >>> custom = {"EX_glc__D_e": (5, 200)}
+    >>> bounds = create_exchange_bounds_template(
+    ...     matrix,
+    ...     sbml_bounds=sbml_bounds,
+    ...     custom_bounds=custom
+    ... )
+
+    Notes
+    -----
+    Precedence order (highest to lowest):
+    1. custom_bounds - User-specified overrides
+    2. sbml_bounds - Bounds from SBML file
+    3. default_level and default_max_value - Fallback defaults
+
+    Default values:
+    - level: 1 (enabled)
+    - max_value: 1000 (upper bound)
+    - ratio_drawing: 0 (no ratio constraint)
+
+    You can modify these values based on your metabolic model requirements.
+    Custom bounds take precedence over SBML bounds, which take precedence over defaults.
+    """
+    # Get all exchange columns (exclude growth rate column)
+    exchange_cols = [col for col in exchange_matrix.columns if col != growth_rate_column]
+
+    # Create the template dataframe
+    template_data: Dict[str, List[Union[str, int]]] = {
+        "name": ["level", "max_value", "ratio_drawing"]
+    }
+
+    # Add columns for each exchange reaction with values
+    for col in exchange_cols:
+        # Precedence: custom_bounds > sbml_bounds > defaults
+        if custom_bounds and col in custom_bounds:
+            # Highest priority: custom bounds
+            level_val, max_val = custom_bounds[col]
+            template_data[col] = [level_val, max_val, 0]
+        elif sbml_bounds and col in sbml_bounds:
+            # Second priority: SBML bounds
+            level_val, max_val = sbml_bounds[col]
+            template_data[col] = [level_val, max_val, 0]
+        else:
+            # Lowest priority: default values
+            template_data[col] = [default_level, default_max_value, 0]
+
+    return pd.DataFrame(template_data)
+
+
+def parse_sbml_exchange_bounds(
+    sbml_path: Union[str, Path],
+    default_level: int = 1,
+) -> Dict[str, Tuple[int, int]]:
+    """
+    Parse SBML file to extract exchange reaction bounds (upper bounds).
+
+    This function extracts the upper bound values for exchange reactions from an SBML file
+    and returns them in a format suitable for use with create_exchange_bounds_template.
+
+    Parameters
+    ----------
+    sbml_path : Union[str, Path]
+        Path to SBML XML file
+    default_level : int
+        Default value to use for the "level" parameter (default: 1)
+        The level value is not stored in SBML, so this default is used for all reactions
+
+    Returns
+    -------
+    Dict[str, Tuple[int, int]]
+        Mapping from exchange reaction IDs to (level, max_value) tuples.
+        Example: {"EX_glc__D_e": (1, 1000), "EX_o2_e_i": (1, 500)}
+
+    Notes
+    -----
+    This function attempts to use COBRApy if available, otherwise falls back
+    to XML parsing. Exchange reactions are identified by the "EX_" prefix.
+
+    The upper_bound from SBML is used as max_value. If the upper bound is
+    infinite or very large (>10000), it's capped at 1000 for practical use.
+
+    Examples
+    --------
+    >>> # Parse bounds from SBML
+    >>> bounds = parse_sbml_exchange_bounds("iML1515.xml")
+    >>> print(bounds["EX_glc__D_e"])  # (1, 1000)
+    >>>
+    >>> # Use with create_exchange_bounds_template
+    >>> matrix = create_supplement_exchange_matrix(growth_df, mapping)
+    >>> template = create_exchange_bounds_template(
+    ...     matrix,
+    ...     sbml_bounds=bounds
+    ... )
+    """
+    try:
+        import cobra
+        model = cobra.io.read_sbml_model(str(sbml_path))
+
+        bounds_map = {}
+        for reaction in model.reactions:
+            if reaction.id.startswith("EX_"):
+                # Get upper bound (max_value)
+                upper_bound = reaction.upper_bound
+
+                # Cap very large or infinite bounds at 1000
+                if upper_bound > 10000 or upper_bound == float('inf'):
+                    max_value = 1000
+                else:
+                    max_value = int(upper_bound)
+
+                # Store as (level, max_value) tuple
+                bounds_map[reaction.id] = (default_level, max_value)
+
+        return bounds_map
+
+    except ImportError:
+        print("Warning: COBRApy not available, attempting XML parsing")
+        return _parse_sbml_exchange_bounds_fallback(sbml_path, default_level)
+
+
+def _parse_sbml_exchange_bounds_fallback(
+    sbml_path: Union[str, Path],
+    default_level: int = 1,
+) -> Dict[str, Tuple[int, int]]:
+    """
+    Fallback XML parser for SBML exchange bounds when COBRApy is not available.
+
+    Parameters
+    ----------
+    sbml_path : Union[str, Path]
+        Path to SBML XML file
+    default_level : int
+        Default value to use for the "level" parameter
+
+    Returns
+    -------
+    Dict[str, Tuple[int, int]]
+        Mapping from exchange reaction IDs to (level, max_value) tuples
+    """
+    import xml.etree.ElementTree as ET
+
+    tree = ET.parse(str(sbml_path))
+    root = tree.getroot()
+
+    # Find namespace
+    namespace = {"sbml": root.tag.split("}")[0].strip("{")} if "}" in root.tag else {}
+
+    bounds_map = {}
+
+    # Parse reactions
+    for reaction in root.findall(".//sbml:reaction", namespace):
+        rxn_id = reaction.get("id", "")
+        if rxn_id.startswith("EX_"):
+            # Try to find upper bound in kinetic law or default to 1000
+            upper_bound = 1000
+
+            # Look for upperFluxBound attribute or parameter
+            kinetic_law = reaction.find(".//sbml:kineticLaw", namespace)
+            if kinetic_law is not None:
+                for param in kinetic_law.findall(".//sbml:parameter", namespace):
+                    param_id = param.get("id", "")
+                    if "upper" in param_id.lower() or "ub" in param_id.lower():
+                        try:
+                            value = float(param.get("value", "1000"))
+                            if value > 10000 or value == float('inf'):
+                                upper_bound = 1000
+                            else:
+                                upper_bound = int(value)
+                        except (ValueError, TypeError):
+                            upper_bound = 1000
+
+            bounds_map[rxn_id] = (default_level, upper_bound)
+
+    return bounds_map
 
 
 def load_default_iml1515_mapping() -> Dict[str, str]:

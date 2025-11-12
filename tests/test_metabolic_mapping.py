@@ -249,7 +249,7 @@ def test_no_mapping_provided():
 
     with pytest.raises(TypeError):
         # Missing required parameter supplement_to_exchange_map
-        create_supplement_exchange_matrix(growth_data)
+        create_supplement_exchange_matrix(growth_data, None) # type: ignore
 
 
 def test_custom_separator():

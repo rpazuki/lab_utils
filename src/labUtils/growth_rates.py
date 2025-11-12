@@ -355,7 +355,7 @@ def plot_and_save(preds_df: pd.DataFrame,
     # Get unique groups to avoid duplicates
     unique_groups = df_combined[group_cols].drop_duplicates()
 
-    for idx, (_, group_row) in enumerate(unique_groups.iterrows()):
+    for _, (_, group_row) in enumerate(unique_groups.iterrows()):
         # Filter data for this specific group
         mask = True
         for col in group_cols:
@@ -382,11 +382,13 @@ def plot_and_save(preds_df: pd.DataFrame,
         plt.figure(figsize=(8, 5))
         if yerr is not None:
             plt.errorbar(t, y, yerr=yerr, fmt='.',
-                        label=f"{group_cols[0]}={keys}" if not isinstance(keys, tuple) else ", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)),
+                        label=f"{group_cols[0]}={keys}" if not isinstance(keys, tuple) else ", ".join(f"{col}={val}"
+                                                                for col, val in zip(group_cols, keys)),
                         capsize=3, capthick=1, elinewidth=1)
         else:
             plt.scatter(t, y,
-                       label=f"{group_cols[0]}={keys}" if not isinstance(keys, tuple) else ", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)),
+                       label=f"{group_cols[0]}={keys}" if not isinstance(keys, tuple) else ", ".join(f"{col}={val}"
+                                                                 for col, val in zip(group_cols, keys)),
                        marker='.')
         plt.plot(t, y_hat, label="Predicted", linestyle="--", color="orange")
         plt.xlabel("Time (h)")
@@ -411,4 +413,3 @@ def plot_and_save(preds_df: pd.DataFrame,
         plt.savefig(filepath, dpi=300, bbox_inches='tight')
         print(f"Saved plot: {filepath}")
         plt.close()  # Close figure to free memory
-

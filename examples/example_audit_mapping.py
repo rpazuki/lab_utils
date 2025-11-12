@@ -81,7 +81,7 @@ def example_audit_mapping():
     )
 
     print(f"\nMatrix created with shape: {matrix.shape}")
-    print(f"\nFirst few rows:")
+    print("\nFirst few rows:")
     print(matrix.head())
 
     # Show which columns correspond to supplements
