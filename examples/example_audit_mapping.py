@@ -7,10 +7,10 @@ the exchange matrix.
 
 import pandas as pd
 
-from labUtils.metabolic_mapping import (create_supplement_exchange_matrix,
-                                        get_supplement_mapping,
-                                        load_default_iml1515_mapping,
-                                        load_minimal_media_exchanges)
+from labUtils.amn_mappings import (create_supplement_exchange_matrix,
+                                   get_supplement_mapping,
+                                   load_default_iml1515_mapping,
+                                   load_minimal_media_exchanges)
 
 
 def example_audit_mapping():

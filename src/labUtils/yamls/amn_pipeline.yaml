@@ -1,0 +1,281 @@
+pipelines:
+    ##################################################################################
+    # No replication
+    - AMN_build_dataset_pipeline:
+        Inputs:
+            #####################################
+            # grothwth measurment csv
+            - growth_data:
+                - src: EMPTY
+                - package:  labUtils.utils
+                - method: read_csv
+            # SBML model file
+            - model_sbml:
+                - src: EMPTY
+                - package:  labUtils.amn_mappings
+                - method: parse_sbml_exchanges
+             # SBML model file
+            - model_sbml_bounds:
+                - src: EMPTY
+                - package:  labUtils.amn_mappings
+                - method: parse_sbml_exchange_bounds
+
+
+        Processes:
+            #####################################
+            # Parse raw data and metadata into
+            # a tidy dataframe
+            - df_amn_dataset: # output dataframe name
+                package: labUtils.amn_mappings
+                method: create_supplement_exchange_matrix
+                parameters:
+                    growth_rates_df: growth_data # The 'growth_data' input defined above
+                    supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
+                    supplement_column: supplements # The column name for OD values in output dataframe
+                    growth_rate_column: mu_max # The column name for OD values in output dataframe
+                    success_column: success # The column name for success status in output dataframe
+                    verbose: true
+                    exchange_suffix: _i
+                    custom_mapping:
+                        glu: EX_glc__D_e
+                    baseline_exchanges: #
+                        - EX_pi_e
+                        - EX_co2_e
+                        - EX_fe3_e
+                        - EX_h_e
+                        - EX_pro__L_e
+                        - EX_glyc_e
+                        - EX_mn2_e
+                        - EX_ala__L_e
+                        - EX_fe2_e
+                        - EX_gal_e
+                        - EX_gly_e
+                        - EX_zn2_e
+                        - EX_mg2_e
+                        - EX_ca2_e
+                        - EX_ni2_e
+                        - EX_cu2_e
+                        - EX_sel_e
+                        - EX_cobalt2_e
+                        - EX_h2o_e
+                        - EX_mobd_e
+                        - EX_so4_e
+                        - EX_thr__L_e
+                        - EX_nh4_e
+                        - EX_k_e
+                        - EX_na1_e
+                        - EX_cl_e
+                        - EX_o2_e
+                        - EX_tungs_e
+                        - EX_slnt_e
+                    separator: ; #
+                    fuzzy_threshold: 0.6 # The column name for OD values in output dataframe
+
+            #####################################
+            # Create bounds template for exchange reactions
+            - df_exchange_bounds: # output dataframe name
+                package: labUtils.amn_mappings
+                method: create_exchange_bounds_template
+                parameters:
+                    exchange_matrix: df_amn_dataset # The 'df_amn_dataset' output defined above
+                    growth_rate_column: mu_max # The column name for growth rates in output dataframe
+                    default_level: 1 # Default level for supplemented exchanges
+                    default_max_value: 3 # Default bounds for exchange reactions
+                    sbml_bounds: model_sbml_bounds # The 'model_sbml_bounds' input defined above
+                    custom_bounds: # level, max_value
+                        EX_glc__D_e_i: [100, 10]
+                        EX_ade_e_i: [100, 10]
+                        EX_succ_e_i: [100, 10]
+                        EX_ura_e_i: [100, 10]
+        Outputs:
+            #####################################
+            # List of output dataframes to save
+            # to csv files
+            - df_amn_dataset: df_amn_dataset.csv
+            - df_exchange_bounds: df_amn_dataset_levels.csv
+    ##################################################################################
+    # with replication
+    - AMN_build_dataset_replication_pipeline:
+        Inputs:
+            #####################################
+            # grothwth measurment csv
+            - growth_data:
+                - src: EMPTY
+                - package:  labUtils.utils
+                - method: read_csv
+            # SBML model file
+            - model_sbml:
+                - src: EMPTY
+                - package:  labUtils.amn_mappings
+                - method: parse_sbml_exchanges
+            # SBML model file
+            - model_sbml_bounds:
+                - src: EMPTY
+                - package:  labUtils.amn_mappings
+                - method: parse_sbml_exchange_bounds
+        Processes:
+            #####################################
+            # Parse raw data and metadata into
+            # a tidy dataframe
+            - df_amn_dataset: # output dataframe name
+                package: labUtils.amn_mappings
+                method: create_supplement_exchange_matrix
+                parameters:
+                    growth_rates_df: growth_data # The 'growth_data' input defined above
+                    supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
+                    supplement_column: supplements_first # The column name for OD values in output dataframe
+                    growth_rate_column: mu_max # The column name for OD values in output dataframe
+                    success_column: success # The column name for success status in output dataframe
+                    verbose: true
+                    exchange_suffix: _i
+                    custom_mapping:
+                        glu: EX_glc__D_e
+                    baseline_exchanges: #
+                        - EX_pi_e
+                        - EX_co2_e
+                        - EX_fe3_e
+                        - EX_h_e
+                        - EX_pro__L_e #
+                        - EX_glyc_e #
+                        - EX_mn2_e
+                        - EX_ala__L_e #
+                        - EX_fe2_e
+                        - EX_gal_e #
+                        - EX_gly_e #
+                        - EX_zn2_e
+                        - EX_mg2_e
+                        - EX_ca2_e
+                        - EX_ni2_e
+                        - EX_cu2_e
+                        - EX_sel_e
+                        - EX_cobalt2_e
+                        - EX_h2o_e
+                        - EX_mobd_e
+                        - EX_so4_e
+                        - EX_thr__L_e
+                        - EX_nh4_e
+                        - EX_k_e
+                        - EX_na1_e
+                        - EX_cl_e
+                        - EX_o2_e
+                        - EX_tungs_e
+                        - EX_slnt_e
+                    separator: ; #
+                    fuzzy_threshold: 0.6 # The column name for OD values in output dataframe
+            #####################################
+            # Create bounds template for exchange reactions
+            - df_exchange_bounds: # output dataframe name
+                package: labUtils.amn_mappings
+                method: create_exchange_bounds_template
+                parameters:
+                    exchange_matrix: df_amn_dataset # The 'df_amn_dataset' output defined above
+                    growth_rate_column: mu_max # The column name for growth rates in output dataframe
+                    default_level: 1 # Default level for supplemented exchanges
+                    default_max_value: 1000 # Default bounds for exchange reactions
+                    sbml_bounds: model_sbml_bounds # The 'model_sbml_bounds' input defined above
+                    custom_bounds: # level, max_value
+                        EX_glc__D_e_i: [100, 10]
+                        EX_ade_e_i: [100, 10]
+                        EX_succ_e_i: [100, 10]
+                        EX_ura_e_i: [100, 10]
+
+
+
+        Outputs:
+            #####################################
+            # List of output dataframes to save
+            # to csv files
+            - df_amn_dataset: df_amn_dataset.csv
+            - df_exchange_bounds: df_amn_dataset_levels.csv
+    ##################################################################################
+    # post replication
+    - AMN_build_dataset_post_replication_pipeline:
+        Inputs:
+            #####################################
+            # grothwth measurment csv
+            - growth_data:
+                - src: EMPTY
+                - package:  labUtils.utils
+                - method: read_csv
+            # SBML model file
+            - model_sbml:
+                - src: EMPTY
+                - package:  labUtils.amn_mappings
+                - method: parse_sbml_exchanges
+            # SBML model file
+            - model_sbml_bounds:
+                - src: EMPTY
+                - package:  labUtils.amn_mappings
+                - method: parse_sbml_exchange_bounds
+        Processes:
+            #####################################
+            # Parse raw data and metadata into
+            # a tidy dataframe
+            - df_amn_dataset: # output dataframe name
+                package: labUtils.amn_mappings
+                method: create_supplement_exchange_matrix
+                parameters:
+                    growth_rates_df: growth_data # The 'growth_data' input defined above
+                    supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
+                    supplement_column: supplements_first # The column name for OD values in output dataframe
+                    growth_rate_column: mu_max_mean # The column name for OD values in output dataframe
+                    success_column: success_first # The column name for success status in output dataframe
+                    verbose: true
+                    exchange_suffix: _i
+                    custom_mapping:
+                        glu: EX_glc__D_e
+                    baseline_exchanges: #
+                        - EX_pi_e
+                        - EX_co2_e
+                        - EX_fe3_e
+                        - EX_h_e
+                        - EX_pro__L_e #
+                        - EX_glyc_e #
+                        - EX_mn2_e
+                        - EX_ala__L_e #
+                        - EX_fe2_e
+                        - EX_gal_e #
+                        - EX_gly_e #
+                        - EX_zn2_e
+                        - EX_mg2_e
+                        - EX_ca2_e
+                        - EX_ni2_e
+                        - EX_cu2_e
+                        - EX_sel_e
+                        - EX_cobalt2_e
+                        - EX_h2o_e
+                        - EX_mobd_e
+                        - EX_so4_e
+                        - EX_thr__L_e
+                        - EX_nh4_e
+                        - EX_k_e
+                        - EX_na1_e
+                        - EX_cl_e
+                        - EX_o2_e
+                        - EX_tungs_e
+                        - EX_slnt_e
+                    separator: ; #
+                    fuzzy_threshold: 0.6 # The column name for OD values in output dataframe
+            #####################################
+            # Create bounds template for exchange reactions
+            - df_exchange_bounds: # output dataframe name
+                package: labUtils.amn_mappings
+                method: create_exchange_bounds_template
+                parameters:
+                    exchange_matrix: df_amn_dataset # The 'df_amn_dataset' output defined above
+                    growth_rate_column: mu_max # The column name for growth rates in output dataframe
+                    default_level: 1 # Default level for supplemented exchanges
+                    default_max_value: 1000 # Default bounds for exchange reactions
+                    sbml_bounds: model_sbml_bounds # The 'model_sbml_bounds' input defined above
+                    custom_bounds: # level, max_value
+                        EX_glc__D_e_i: [100, 10]
+                        EX_ade_e_i: [100, 10]
+                        EX_succ_e_i: [100, 10]
+                        EX_ura_e_i: [100, 10]
+
+        Outputs:
+            #####################################
+            # List of output dataframes to save
+            # to csv files
+            - df_amn_dataset: df_amn_dataset.csv
+            - df_exchange_bounds: df_amn_dataset_levels.csv

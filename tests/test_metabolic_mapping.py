@@ -5,9 +5,9 @@ Tests for metabolic mapping functionality.
 import pandas as pd
 import pytest
 
-from labUtils.metabolic_mapping import (create_supplement_exchange_matrix,
-                                        load_default_iml1515_mapping,
-                                        load_minimal_media_exchanges)
+from labUtils.amn_mappings import (create_supplement_exchange_matrix,
+                                   load_default_iml1515_mapping,
+                                   load_minimal_media_exchanges)
 
 
 def test_basic_mapping():

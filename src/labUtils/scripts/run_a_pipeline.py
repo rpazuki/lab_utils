@@ -13,7 +13,7 @@ import logging
 import sys
 from pathlib import Path
 
-from labUtils.pipelines import build_pipeline_from_yaml
+from labUtils.utils import build_pipeline_from_yaml
 
 # Configure logging
 logging.basicConfig(
@@ -105,7 +105,7 @@ Example:
     try:
         # Build the pipeline from YAML
         log.info(f"Loading pipeline '{args.pipeline_name}' from {yaml_path}")
-        pipeline = build_pipeline_from_yaml(
+        pipeline, config = build_pipeline_from_yaml(
             yaml_path,
             args.pipeline_name,
             output_dir,

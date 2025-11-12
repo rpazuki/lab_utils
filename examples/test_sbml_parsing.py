@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from labUtils.metabolic_mapping import (create_supplement_exchange_matrix,
-                                        get_supplement_mapping,
-                                        load_minimal_media_exchanges,
-                                        parse_sbml_exchanges)
+from labUtils.amn_mappings import (create_supplement_exchange_matrix,
+                                   get_supplement_mapping,
+                                   load_minimal_media_exchanges,
+                                   parse_sbml_exchanges)
 
 
 def download_iml1515_model():

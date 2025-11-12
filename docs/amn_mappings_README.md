@@ -1,10 +1,10 @@
-# Metabolic Mapping Module
+# AMN Mappings Module
 
 Convert growth rate data with supplement information into binary exchange reaction matrices for metabolic modeling.
 
 ## Overview
 
-The `metabolic_mapping` module provides tools to:
+The `amn_mappings` module provides tools to:
 1. **Parse SBML metabolic models** (via COBRApy) to extract exchange reactions
 2. **Map supplement names to exchange reactions** (exact + fuzzy matching)
 3. **Create binary matrices** suitable for machine learning with metabolic models
@@ -22,7 +22,7 @@ COBRApy is already installed in this workspace.
 
 ```python
 import pandas as pd
-from labUtils.metabolic_mapping import (
+from labUtils.amn_mappings import (
     create_supplement_exchange_matrix,
     parse_sbml_exchanges,
     get_supplement_mapping,
@@ -186,11 +186,11 @@ baseline = load_minimal_media_exchanges()
 
 ```python
 # Option A: Parse SBML file
-from labUtils.metabolic_mapping import parse_sbml_exchanges
+from labUtils.amn_mappings import parse_sbml_exchanges
 mapping = parse_sbml_exchanges("iML1515.xml")
 
 # Option B: Use curated mapping
-from labUtils.metabolic_mapping import load_default_iml1515_mapping
+from labUtils.amn_mappings import load_default_iml1515_mapping
 mapping = load_default_iml1515_mapping()
 ```
 
@@ -273,7 +273,7 @@ The resulting matrix has:
 The module provides explicit SBML parsing functions:
 
 ```python
-from labUtils.metabolic_mapping import parse_sbml_exchanges
+from labUtils.amn_mappings import parse_sbml_exchanges
 
 # Parse SBML to get exchange mappings
 mapping = parse_sbml_exchanges("path/to/iML1515.xml")
@@ -311,7 +311,7 @@ matrix = create_supplement_exchange_matrix(
 ## Examples
 
 See the `examples/` directory:
-- `example_metabolic_mapping.py` - Basic usage patterns
+- `example_amn_mappings.py` - Basic usage patterns
 - `example_audit_mapping.py` - Auditing and fixing unmapped supplements
 - `test_sbml_parsing.py` - SBML parsing validation with iML1515
 

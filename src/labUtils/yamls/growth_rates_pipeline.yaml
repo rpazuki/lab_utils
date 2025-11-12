@@ -58,7 +58,7 @@ pipelines:
                     value_col: log_od_od0
                     group_cols:
                         - well
-                    save_plot_data: true
+                    save_plot_data: false
 
 
         Outputs:
@@ -154,7 +154,7 @@ pipelines:
                     standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
                     group_cols: # columns defining each growth series
                         - group_id
-                    save_plot_data: true
+                    save_plot_data: false
 
         Outputs:
             #####################################
@@ -240,7 +240,7 @@ pipelines:
                     # standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
                     group_cols: # columns defining each growth series
                         - well
-                    save_plot_data: true
+                    save_plot_data: false
             #####################################
             # Calculate replicates statistics
             - df_replicate_stats:  # output dataframe name

@@ -5,10 +5,10 @@ import tempfile
 
 import pandas as pd
 
-from labUtils.metabolic_mapping import (create_exchange_bounds_template,
-                                        create_supplement_exchange_matrix,
-                                        load_default_iml1515_mapping,
-                                        parse_sbml_exchange_bounds)
+from labUtils.amn_mappings import (create_exchange_bounds_template,
+                                   create_supplement_exchange_matrix,
+                                   load_default_iml1515_mapping,
+                                   parse_sbml_exchange_bounds)
 
 # Check if iML1515 model exists
 model_path = os.path.join(tempfile.gettempdir(), 'iML1515.xml')

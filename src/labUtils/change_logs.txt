@@ -1,4 +1,10 @@
 ****************************************
+Roozbeh H. Pazuki, 2025-11-12:
+
+1. Including AMN uper bound templates.
+2. Updated the pipelines scripts.
+
+****************************************
 Roozbeh H. Pazuki, 2025-11-11:
 
 1. Including AMN related utils.

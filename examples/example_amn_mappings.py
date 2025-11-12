@@ -8,9 +8,9 @@ from growth rate data.
 
 import pandas as pd
 
-from labUtils.metabolic_mapping import (create_supplement_exchange_matrix,
-                                        load_default_iml1515_mapping,
-                                        load_minimal_media_exchanges)
+from labUtils.amn_mappings import (create_supplement_exchange_matrix,
+                                   load_default_iml1515_mapping,
+                                   load_minimal_media_exchanges)
 
 
 def example_with_manual_mapping():

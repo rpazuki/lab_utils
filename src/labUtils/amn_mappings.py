@@ -43,6 +43,7 @@
 ##############################################################
 
 import difflib
+import logging
 import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -62,6 +63,8 @@ def create_supplement_exchange_matrix(
     custom_mapping: Optional[Dict[str, str]] = None,
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
+    verbose: bool = False,
+    exchange_suffix: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Create a binary matrix mapping supplements to exchange reactions.
@@ -100,6 +103,14 @@ def create_supplement_exchange_matrix(
     fuzzy_threshold : float
         Threshold for fuzzy matching of supplement names (default: 0.6).
         Higher values require closer matches.
+    verbose : bool
+        If True, print detailed information about all supplement-to-exchange mappings,
+        including exact matches, fuzzy matches, and unmapped supplements (default: False)
+    exchange_suffix : Optional[str]
+        Optional suffix to append to all exchange reaction column names (default: None).
+        If provided, all exchange columns will have this suffix added, but the growth_rate_column
+        will remain unchanged. Example: exchange_suffix="_input" would rename "EX_glc__D_e"
+        to "EX_glc__D_e_input"
 
     Returns
     -------
@@ -166,10 +177,14 @@ def create_supplement_exchange_matrix(
     # Map supplements -> exchange reaction ids using exact then fuzzy matching
     supplement_to_rxn: Dict[str, str] = {}
     unmapped: List[str] = []
+    exact_matches: List[Tuple[str, str]] = []
+    fuzzy_matches: List[Tuple[str, str, str]] = []  # (supplement, matched_key, reaction)
     map_keys = list(normalized_map.keys())
+
     for supp in sorted(unique_supplements):
         if supp in normalized_map:
             supplement_to_rxn[supp] = normalized_map[supp]
+            exact_matches.append((supp, normalized_map[supp]))
             continue
 
         # Fuzzy match against SBML/manual keys
@@ -178,10 +193,33 @@ def create_supplement_exchange_matrix(
             if matches:
                 best = matches[0]
                 supplement_to_rxn[supp] = normalized_map[best]
-                warnings.warn(f"Supplement '{supp}' fuzzy-matched to '{best}' -> {normalized_map[best]}")
+                fuzzy_matches.append((supp, best, normalized_map[best]))
                 continue
 
         unmapped.append(supp)
+
+    # Print verbose output if requested
+    if verbose:
+        print("\n" + "="*70)
+        print("Supplement to Exchange Reaction Mapping")
+        print("="*70)
+
+        if exact_matches:
+            print(f"\nExact matches ({len(exact_matches)}):")
+            for supp, rxn in exact_matches:
+                print(f"  {supp:30s} -> {rxn}")
+
+        if fuzzy_matches:
+            print(f"\nFuzzy matches ({len(fuzzy_matches)}):")
+            for supp, matched_key, rxn in fuzzy_matches:
+                print(f"  {supp:30s} -> {rxn:30s} (matched via '{matched_key}')")
+
+        if unmapped:
+            print(f"\nUnmapped supplements ({len(unmapped)}):")
+            for supp in unmapped:
+                print(f"  {supp}")
+
+        print("\n" + "="*70 + "\n")
 
     if unmapped:
         warnings.warn(f"The following supplements could not be mapped to exchange reactions: {unmapped}")
@@ -234,6 +272,13 @@ def create_supplement_exchange_matrix(
 
     # Reorder columns: exchanges sorted, then growth rate last
     exch_cols = sorted([c for c in result_df.columns if c != growth_rate_column])
+
+    # Apply suffix to exchange columns if requested
+    if exchange_suffix:
+        rename_map = {col: f"{col}{exchange_suffix}" for col in exch_cols}
+        result_df = result_df.rename(columns=rename_map)
+        exch_cols = [f"{col}{exchange_suffix}" for col in exch_cols]
+
     result_df = result_df[exch_cols + [growth_rate_column]]
 
     return result_df
@@ -352,6 +397,10 @@ def parse_sbml_exchanges(sbml_path: Union[str, Path]) -> Dict[str, str]:
     """
     try:
         import cobra
+
+        # Suppress COBRApy INFO logging
+        logging.getLogger('cobra').setLevel(logging.WARNING)
+
         model = cobra.io.read_sbml_model(str(sbml_path))
 
         mapping = {}
@@ -577,6 +626,10 @@ def parse_sbml_exchange_bounds(
     """
     try:
         import cobra
+
+        # Suppress COBRApy INFO logging
+        logging.getLogger('cobra').setLevel(logging.WARNING)
+
         model = cobra.io.read_sbml_model(str(sbml_path))
 
         bounds_map = {}

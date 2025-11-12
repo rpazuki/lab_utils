@@ -5,10 +5,10 @@ import tempfile
 
 import pandas as pd
 
-from labUtils.metabolic_mapping import (create_exchange_bounds_template,
-                                        create_supplement_exchange_matrix,
-                                        parse_sbml_exchange_bounds,
-                                        parse_sbml_exchanges)
+from labUtils.amn_mappings import (create_exchange_bounds_template,
+                                   create_supplement_exchange_matrix,
+                                   parse_sbml_exchange_bounds,
+                                   parse_sbml_exchanges)
 
 print("="*70)
 print("Complete Workflow with SBML Bounds")
