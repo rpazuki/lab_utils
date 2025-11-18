@@ -47,7 +47,8 @@ pipelines:
                     value_col: log_od_od0
                     group_cols:
                         - well
-                    y_0_fixed: 0.0
+                    fixed_params:
+                        y0: 0.0 # Fix y0 to 0.0
             - df_predict_modified_gompertz:
                 package: labUtils.growth_rates
                 method: predict_modified_gompertz_per_series
@@ -140,7 +141,8 @@ pipelines:
                     min_points: 5 # require at least this many points to fit
                     group_cols: # columns defining each growth series
                         - group_id
-                    y_0_fixed: 0.0 # Fix y_0 to 0.0
+                    fixed_params:
+                        y0: 0.0 # Fix y0 to 0.0
             #####################################
             # Predict modified Gompertz model to each growth series
             - df_predict_modified_gompertz:
@@ -226,7 +228,8 @@ pipelines:
                     min_points: 5 # require at least this many points to fit
                     group_cols: # columns defining each growth series
                         - well
-                    y_0_fixed: 0.0 # Fix y_0 to 0.0
+                    fixed_params:
+                        y0: 0.0 # Fix y0 to 0.0
             #####################################
             # Predict modified Gompertz model to each growth series
             - df_predict_modified_gompertz:

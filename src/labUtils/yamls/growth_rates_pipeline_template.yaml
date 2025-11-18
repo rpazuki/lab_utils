@@ -72,7 +72,8 @@ pipelines:
                     group_cols: # columns defining each growth series
                         - group_id
                     save_plot_data: true # whether to save plot of the data and fit
-                    y_0_fixed: 0.0 # Fix y_0 to 0.0
+                    fixed_params:
+                        y0: 0.0 # Fix y0 to 0.0
 
 
         Outputs:

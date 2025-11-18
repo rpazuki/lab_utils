@@ -1,0 +1,51 @@
+# Ruff configuration
+# Ruff replaces Black (formatter), isort (import sorter), and Pylint (linter)
+
+# Line length to match Black's default
+line-length = 120
+
+# Python version
+target-version = "py313"
+
+[lint]
+# Enable pycodestyle (E), Pyflakes (F), isort (I), and other useful rules
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+]
+
+# Ignore rules that match your previous Pylint configuration
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "B008",   # Do not perform function calls in argument defaults
+    "C901",   # Too complex
+    "W605",   # Invalid escape sequence (can be overly strict)
+]
+
+# Equivalent to your Pylint ignores:
+# C0114 - missing-module-docstring
+# C0115 - missing-class-docstring
+# C0103 - invalid-name
+# W0102 - dangerous-default-value (similar to B006 in Ruff)
+# W1203 - logging-fstring-interpolation
+# W0621 - redefined-outer-name
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with spaces
+indent-style = "space"
+
+# Like Black, respect magic trailing comma
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect line ending
+line-ending = "auto"
