@@ -8,16 +8,18 @@
 import importlib
 import inspect
 import logging
+
 # import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional, TypeVar
+from typing import Any, TypeVar
 
 import yaml
 from addict import Dict as DefaultDict
 from pandas import DataFrame
 
-_Self = TypeVar('_Self', bound='AbstractPipeline')
+_Self = TypeVar("_Self", bound="AbstractPipeline")
 
 
 # logger
@@ -30,17 +32,17 @@ class Dict(DefaultDict):
         # calling dict.unassinged properties return None
         return None
 
+
 class IncompatibleArgsException(Exception):
-    """Exception raised when the arguments passed to a process are incompatible.
-    """
+    """Exception raised when the arguments passed to a process are incompatible."""
+
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
 
 
 class AbstractPipeline(ABC):
-    """An abstract pipeline class.
-    """
+    """An abstract pipeline class."""
 
     def __init__(self, processes=[]):
         self.processes = processes
@@ -61,12 +63,11 @@ class AbstractPipeline(ABC):
         pass
 
     @abstractmethod
-    def __mul__(self, other) -> 'ProcessFork':
+    def __mul__(self, other) -> "ProcessFork":
         pass
 
 
 class AbstractProcess(ABC):
-
     @abstractmethod
     def __call__(self, **kwargs) -> Dict:
         """The operation of the process must happen here.
@@ -78,7 +79,6 @@ class AbstractProcess(ABC):
         and will be passed to the down-stream process or
         return to the caller.
         """
-
 
     def __rshift__(self, other) -> AbstractPipeline:
         """Appends the process to the end of an Process or DFPipeline.
@@ -113,11 +113,9 @@ class AbstractProcess(ABC):
                 other = ProcessJoined(other)
             return DFPipeline([self, other])
         elif issubclass(type(other), AbstractPipeline):
-            return DFPipeline(
-                [self] + other.processes)
+            return DFPipeline([self] + other.processes)
         else:
-            raise ValueError(
-                f"The '{type(other)}' must be a AbstractProcess or DFPipeline.")
+            raise ValueError(f"The '{type(other)}' must be a AbstractProcess or DFPipeline.")
 
     def __mul__(self, other):
         """Fork two or more processes.
@@ -150,8 +148,7 @@ class AbstractProcess(ABC):
         """
         if isinstance(other, int):
             if isinstance(self, ProcessFork):
-                raise ValueError(
-                    "The 'ProcessFork' has already forked (cannot be multiplied).")
+                raise ValueError("The 'ProcessFork' has already forked (cannot be multiplied).")
             else:
                 return ProcessFork([self] * other)
         if isinstance(other, ProcessFork):
@@ -164,14 +161,12 @@ class AbstractProcess(ABC):
         if issubclass(type(other), DFPipeline):
             return ProcessFork([self, other])
         else:
-            raise ValueError(
-                f"The '{type(other)}' must be an int, a AbstractProcess, DFPipeline "
-                f"or tuples of both.")
+            raise ValueError(f"The '{type(other)}' must be an int, a AbstractProcess, DFPipeline or tuples of both.")
 
 
 class Process(AbstractProcess):
-    """A singleton object for instantiable processes.
-    """
+    """A singleton object for instantiable processes."""
+
     _instance = None
 
     def __new__(cls):
@@ -188,9 +183,7 @@ class ProcessPassThrough(Process):
 
 
 class ProcessJoined(AbstractProcess):
-    def __init__(self,
-                 forkedProcess: AbstractProcess,
-                 kwargs_mapping: Mapping[int, list[tuple[str, str]]] = {}):
+    def __init__(self, forkedProcess: AbstractProcess, kwargs_mapping: Mapping[int, list[tuple[str, str]]] = {}):
         """Join all the forked processes and returns as a single Mapping.
 
         Parameters
@@ -223,8 +216,7 @@ class ProcessJoined(AbstractProcess):
 
 
 class ProcessFork(AbstractProcess):
-    def __init__(self,
-                 processes: list):
+    def __init__(self, processes: list):
         assert len(processes) > 1, "The processes must be more than one."
         self.processes = processes
 
@@ -234,7 +226,7 @@ class ProcessFork(AbstractProcess):
     def __setitem__(self, key: int, process) -> None:
         self.processes[key] = process
 
-    def __call__(self,  **kwargs) -> tuple[Dict, ...]:
+    def __call__(self, **kwargs) -> tuple[Dict, ...]:
         """It calles each sub-processes of the fork and returns thier payload as a tuple."""
         return tuple(p(**kwargs) for p in self.processes)
 
@@ -273,17 +265,14 @@ class ProcessFork(AbstractProcess):
             raises when the 'other' argument is not a type of a mapping.
         """
         if isinstance(other, Mapping):
-            error_msg = ("The number of renaming must be less than "
-                      "or equal to the number of processes.")
+            error_msg = "The number of renaming must be less than or equal to the number of processes."
             assert len(other) <= len(self.processes), error_msg
             return ProcessJoined(self, kwargs_mapping=other)
         else:
-            raise ValueError(
-                f"The {type(other)=} must be a Mapping[str, int] ")
+            raise ValueError(f"The {type(other)=} must be a Mapping[str, int] ")
 
 
 class DFPipeline(AbstractPipeline):
-
     def __rshift__(self, other) -> AbstractPipeline:
         """Appends the process to the end of an Process or DFPipeline.
 
@@ -320,8 +309,7 @@ class DFPipeline(AbstractPipeline):
         elif isinstance(other, DFPipeline):
             return DFPipeline(self.processes + other.processes)
         else:
-            raise ValueError(
-                f"The '{type(other)}' must be a Process or DFPipeline.")
+            raise ValueError(f"The '{type(other)}' must be a Process or DFPipeline.")
 
     def __mul__(self, other) -> ProcessFork:
         """Fork two or more pipslines.
@@ -355,17 +343,13 @@ class DFPipeline(AbstractPipeline):
         if isinstance(other, int):
             return ProcessFork([self] * other)
         if isinstance(other, ProcessFork):
-            raise ValueError(
-                f"The {type(other)=} cannot be mutiplied from LHS of a DFPipeline."
-            )
+            raise ValueError(f"The {type(other)=} cannot be mutiplied from LHS of a DFPipeline.")
         if issubclass(type(other), AbstractProcess):
             return ProcessFork([self, other])
         if issubclass(type(other), DFPipeline):
             return ProcessFork([self, other])
         else:
-            raise ValueError(
-                f"The {type(other)=} must be an int, a Process, DFPipeline "
-                f"or tuples of both.")
+            raise ValueError(f"The {type(other)=} must be an int, a Process, DFPipeline or tuples of both.")
 
     def process(self, /, **kwargs) -> Dict:
         """Proccess and return the pipeline.
@@ -398,17 +382,18 @@ class DFPipeline(AbstractPipeline):
             def name(obj) -> str:
                 return type(obj).__name__
 
-            if (len(e.args) > 0 and
-                    ("missing 1 required keyword-only argument" in e.args[0] or
-                     "missing 1 required positional argument" in e.args[0]
-                     )):
+            if len(e.args) > 0 and (
+                "missing 1 required keyword-only argument" in e.args[0]
+                or "missing 1 required positional argument" in e.args[0]
+            ):
                 if index > 0:
                     previous_process = name(self.processes[index - 1])
                 else:
                     previous_process = "(input of the pipline)"
                 raise IncompatibleArgsException(
                     f"The process '{name(process)}' received incompatible payload from "
-                    f"the previous process '{previous_process}'") from e
+                    f"the previous process '{previous_process}'"
+                ) from e
             else:
                 raise e
         return payload_kwargs
@@ -445,7 +430,7 @@ class ProcessFactory:
 
 
 class InputProcess(Process):
-    def __call__(self, *, name:str, src:str, package:str, method:str, **kwargs) -> Dict:
+    def __call__(self, *, name: str, src: str, package: str, method: str, **kwargs) -> Dict:
         """Input process to load data from different sources.
 
         Parameters
@@ -462,19 +447,21 @@ class InputProcess(Process):
         pkg = importlib.import_module(package)
         func = getattr(pkg, method)
         data = func(Path(src), **kwargs)
-        return Dict({f"{name}":data})
+        return Dict({f"{name}": data})
 
 
 class DFProcess(Process):
-    def __call__(self,
-                 *,
-                 payload:Dict,
-                 name:str,
-                 package:str,
-                 method:str,
-                 parameters:dict,
-                 output_dir:Optional[str | Path] = None,
-                 **kwargs) -> Dict:
+    def __call__(
+        self,
+        *,
+        payload: Dict,
+        name: str,
+        package: str,
+        method: str,
+        parameters: dict,
+        output_dir: str | Path | None = None,
+        **kwargs,
+    ) -> Dict:
         """DataFrame process to save data to different destinations.
 
         Parameters
@@ -490,12 +477,14 @@ class DFProcess(Process):
         parameters:dict
 
         """
+
         def is_hashable(obj):
             try:
                 hash(obj)
                 return True
             except TypeError:
                 return False
+
         pkg = importlib.import_module(package)
         func = getattr(pkg, method)
         arguments = {}
@@ -506,20 +495,20 @@ class DFProcess(Process):
                 arguments[key] = value
         signature = inspect.signature(func)
         if output_dir is not None:
-            if 'output_dir' in signature.parameters:
-                arguments['output_dir'] = output_dir
+            if "output_dir" in signature.parameters:
+                arguments["output_dir"] = output_dir
             # else:
             #     warnings.warn(
             #         f"The 'DFProcess' cannot pass the 'output_dir' to the method '{method}' "
             #         f"of package '{package}' because it does not accept such argument."
             #     )
+
         data = func(**arguments)
-        return Dict({**{f"{name}":data},
-                     **payload})
+        return Dict({**{f"{name}": data}, **payload})
 
 
 class OutputProcess(Process):
-    def __call__(self, *, payload:Dict, outputs:dict, **kwargs) -> Dict:
+    def __call__(self, *, payload: Dict, outputs: dict, **kwargs) -> Dict:
         """Output process to save data to different destinations.
 
         Parameters
@@ -558,15 +547,14 @@ class OutputProcess(Process):
                     f"OutputProcess cannot handle the type of '{type(payload_item)}' for '{name}'"
                 )
 
-
         return payload
 
 
 def build_pipeline_from_yaml_string(
     yaml_string: str,
     pipeline_name: str,
-    output_dir: Optional[str | Path] = None,
-    input_sources: Optional[dict[str, str]] = None
+    output_dir: str | Path | None = None,
+    input_sources: dict[str, str] | None = None,
 ) -> tuple[DFPipeline, dict]:
     """Build a DFPipeline from a YAML configuration string.
 
@@ -616,10 +604,10 @@ def build_pipeline_from_yaml_string(
     config = yaml.safe_load(yaml_string)
 
     # Validate top-level structure
-    if 'pipelines' not in config:
+    if "pipelines" not in config:
         raise ValueError("YAML must contain 'pipelines' key")
 
-    pipelines = config['pipelines']
+    pipelines = config["pipelines"]
 
     # Find the requested pipeline
     pipeline_config = None
@@ -630,22 +618,20 @@ def build_pipeline_from_yaml_string(
 
     if pipeline_config is None:
         available = [list(p.keys())[0] for p in pipelines]
-        raise ValueError(
-            f"Pipeline '{pipeline_name}' not found. Available pipelines: {available}"
-        )
+        raise ValueError(f"Pipeline '{pipeline_name}' not found. Available pipelines: {available}")
 
     # Validate required sections
-    if 'Inputs' not in pipeline_config:
+    if "Inputs" not in pipeline_config:
         raise ValueError(f"Pipeline '{pipeline_name}' must contain 'Inputs' section")
-    if 'Processes' not in pipeline_config:
+    if "Processes" not in pipeline_config:
         raise ValueError(f"Pipeline '{pipeline_name}' must contain 'Processes' section")
-    if 'Outputs' not in pipeline_config:
+    if "Outputs" not in pipeline_config:
         raise ValueError(f"Pipeline '{pipeline_name}' must contain 'Outputs' section")
 
     processes = []
 
     # Build InputProcess for each input
-    inputs_config = pipeline_config['Inputs']
+    inputs_config = pipeline_config["Inputs"]
     for input_dict in inputs_config:
         for input_name, input_spec in input_dict.items():
             # Convert list of dicts to a single dict
@@ -655,16 +641,16 @@ def build_pipeline_from_yaml_string(
 
             # Override src with input_sources if provided
             if input_sources and input_name in input_sources:
-                input_params['src'] = input_sources[input_name]
+                input_params["src"] = input_sources[input_name]
 
             # Validate required fields
-            if 'src' not in input_params:
+            if "src" not in input_params:
                 raise ValueError(
                     f"Input '{input_name}' must have 'src' field in YAML or provided via input_sources parameter"
                 )
-            if 'package' not in input_params:
+            if "package" not in input_params:
                 raise ValueError(f"Input '{input_name}' must have 'package' field")
-            if 'method' not in input_params:
+            if "method" not in input_params:
                 raise ValueError(f"Input '{input_name}' must have 'method' field")
 
             # Create a ProcessLogic wrapper for InputProcess
@@ -673,25 +659,26 @@ def build_pipeline_from_yaml_string(
                     input_proc = InputProcess()
                     return input_proc(
                         name=name,
-                        src=params['src'],
-                        package=params['package'],
-                        method=params['method'],
-                        **{k: v for k, v in params.items() if k not in ['src', 'package', 'method']},
+                        src=params["src"],
+                        package=params["package"],
+                        method=params["method"],
+                        **{k: v for k, v in params.items() if k not in ["src", "package", "method"]},
                     )
+
                 return input_logic
 
             processes.append(ProcessLogic(make_input_process(input_name, input_params)))
 
     # Build DFProcess for each process
-    processes_config = pipeline_config['Processes']
+    processes_config = pipeline_config["Processes"]
     for process_dict in processes_config:
         for process_name, process_spec in process_dict.items():
             # Validate required fields
-            if 'package' not in process_spec:
+            if "package" not in process_spec:
                 raise ValueError(f"Process '{process_name}' must have 'package' field")
-            if 'method' not in process_spec:
+            if "method" not in process_spec:
                 raise ValueError(f"Process '{process_name}' must have 'method' field")
-            if 'parameters' not in process_spec:
+            if "parameters" not in process_spec:
                 raise ValueError(f"Process '{process_name}' must have 'parameters' field")
 
             # Create a ProcessLogic wrapper for DFProcess
@@ -701,17 +688,18 @@ def build_pipeline_from_yaml_string(
                     return df_proc(
                         payload=Dict(**kwargs),
                         name=name,
-                        package=spec['package'],
-                        method=spec['method'],
-                        parameters=spec['parameters'],
-                        output_dir=output_dir
+                        package=spec["package"],
+                        method=spec["method"],
+                        parameters=spec["parameters"],
+                        output_dir=output_dir,
                     )
+
                 return df_logic
 
             processes.append(ProcessLogic(make_df_process(process_name, process_spec)))
 
     # Build OutputProcess
-    outputs_config = pipeline_config['Outputs']
+    outputs_config = pipeline_config["Outputs"]
     outputs_dict = {}
     for output_dict in outputs_config:
         outputs_dict.update(output_dict)

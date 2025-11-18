@@ -49,25 +49,46 @@ pipelines:
                         - well
                     fixed_params:
                         y0: 0.0 # Fix y0 to 0.0
+            - df_fit_max_growth_rate:
+                package: labUtils.growth_rates
+                method: fit_max_growth_rate_per_series
+                parameters:
+                    df: df_transformed
+                    time_col: time_h
+                    value_col: log_od_od0
+                    group_cols:
+                        - well
+                    moving_window_size: 5
+                    smoothing_iterations: 4
+                    smooth_window_size: 2
+            - df_combined_fit:
+                package: labUtils.utils
+                method: smart_join
+                parameters:
+                    left_df: df_fit_modified_gompertz
+                    right_df: df_fit_max_growth_rate
+                    on_cols:
+                        - well
+
             - df_predict_modified_gompertz:
                 package: labUtils.growth_rates
                 method: predict_modified_gompertz_per_series
                 parameters:
                     df: df_transformed
-                    params_df: df_fit_modified_gompertz
+                    params_df: df_combined_fit
                     time_col: time_h
                     value_col: log_od_od0
                     group_cols:
                         - well
-                    save_plot_data: false
+                    save_plot_data: true
 
 
         Outputs:
             - df_parsed: parsed_data.csv
             - df_report: report.csv
             - df_transformed: transformed_data.csv
-            - df_fit_modified_gompertz: growth_rates.csv
             - df_predict_modified_gompertz: predictions.csv
+            - df_combined_fit: growth_rates.csv
 
     ##################################################################################
     # Growth rate fitting pipeline with replicate statistics
@@ -144,19 +165,44 @@ pipelines:
                     fixed_params:
                         y0: 0.0 # Fix y0 to 0.0
             #####################################
+            # Fit max growth rate using moving window
+            # and smoothing to each growth series
+            - df_fit_max_growth_rate:
+                package: labUtils.growth_rates
+                method: fit_max_growth_rate_per_series
+                parameters:
+                    df: df_transformed
+                    time_col: time_h
+                    value_col: log_od_od0
+                    group_cols:
+                        - group_id
+                    moving_window_size: 5
+                    smoothing_iterations: 4
+                    smooth_window_size: 2
+            #####################################
+            # Combine modified Gompertz fit and max growth rate fit
+            - df_combined_fit:
+                package: labUtils.utils
+                method: smart_join
+                parameters:
+                    left_df: df_fit_modified_gompertz
+                    right_df: df_fit_max_growth_rate
+                    on_cols:
+                        - group_id
+            #####################################
             # Predict modified Gompertz model to each growth series
             - df_predict_modified_gompertz:
                 package: labUtils.growth_rates
                 method: predict_modified_gompertz_per_series
                 parameters:
                     df: df_transformed # The 'df_transformed' that was created above
-                    params_df: df_fit_modified_gompertz
+                    params_df: df_combined_fit
                     time_col: time_h # The column name for time values in df_transformed dataframe
                     value_col: log_od_od0 # The column name for transformed log(OD/OD_0) values in df_transformed dataframe
                     standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
                     group_cols: # columns defining each growth series
                         - group_id
-                    save_plot_data: false
+                    save_plot_data: true
 
         Outputs:
             #####################################
@@ -164,7 +210,7 @@ pipelines:
             # to csv files
             - df_parsed: parsed_data.csv
             - df_report: report.csv
-            - df_fit_modified_gompertz: growth_rates.csv
+            - df_combined_fit: growth_rates.csv
             - df_predict_modified_gompertz: predictions.csv
 
     ##################################################################################
@@ -231,31 +277,73 @@ pipelines:
                     fixed_params:
                         y0: 0.0 # Fix y0 to 0.0
             #####################################
+            # Fit max growth rate using moving window
+            # and smoothing to each growth series
+            - df_fit_max_growth_rate:
+                package: labUtils.growth_rates
+                method: fit_max_growth_rate_per_series
+                parameters:
+                    df: df_transformed
+                    time_col: time_h
+                    value_col: log_od_od0
+                    group_cols:
+                        - well
+                    moving_window_size: 5
+                    smoothing_iterations: 4
+                    smooth_window_size: 2
+            #####################################
+            # Combine modified Gompertz fit and max growth rate fit
+            - df_combined_fit:
+                package: labUtils.utils
+                method: smart_join
+                parameters:
+                    left_df: df_fit_modified_gompertz
+                    right_df: df_fit_max_growth_rate
+                    on_cols:
+                        - well
+            #####################################
             # Predict modified Gompertz model to each growth series
             - df_predict_modified_gompertz:
                 package: labUtils.growth_rates
                 method: predict_modified_gompertz_per_series
                 parameters:
                     df: df_transformed # The 'df_transformed' that was created above
-                    params_df: df_fit_modified_gompertz
+                    params_df: df_combined_fit
                     time_col: time_h # The column name for time values in df_transformed dataframe
                     value_col: log_od_od0 # The column name for transformed log(OD/OD_0) values in df_transformed dataframe
                     # standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
                     group_cols: # columns defining each growth series
                         - well
-                    save_plot_data: false
+                    save_plot_data: true
+
             #####################################
             # Calculate replicates statistics
             - df_replicate_stats:  # output dataframe name
                 package: labUtils.media_bot
                 method: calculate_replicate_statistics
                 parameters:
-                    df_parsed: df_fit_modified_gompertz # The 'df_fit_modified_gompertz' that was created above
+                    df_parsed: df_combined_fit # The 'df_combined_fit' that was created above
                     direction: alphabetical # along A, B, C, ...
                     sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
                     ddof: 0 # Biased std
-                    value_column_name: mu_max # The column name for OD values in df_fit_modified_gompertz dataframe
-
+                    value_column_name: mu_max # The column name for OD values in df_combined_fit dataframe
+            - df_replicate_stats_mv:  # output dataframe name
+                package: labUtils.media_bot
+                method: calculate_replicate_statistics
+                parameters:
+                    df_parsed: df_combined_fit # The 'df_combined_fit' that was created above
+                    direction: alphabetical # along A, B, C, ...
+                    sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                    ddof: 0 # Biased std
+                    value_column_name: mv_mu_max # The column name for OD values in df_combined_fit dataframe
+            - df_combined_fit_2:
+                package: labUtils.utils
+                method: smart_join
+                parameters:
+                    left_df: df_replicate_stats
+                    right_df: df_replicate_stats_mv
+                    on_cols:
+                        - group_id
 
         Outputs:
             #####################################
@@ -263,5 +351,5 @@ pipelines:
             # to csv files
             - df_parsed: parsed_data.csv
             - df_report: report.csv
-            - df_replicate_stats: growth_rates.csv
+            - df_combined_fit_2: growth_rates.csv
             - df_predict_modified_gompertz: predictions.csv

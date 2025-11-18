@@ -32,7 +32,7 @@ pipelines:
                     growth_rates_df: growth_data # The 'growth_data' input defined above
                     supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
                     supplement_column: supplements # The column name for OD values in output dataframe
-                    growth_rate_column: mu_max # The column name for OD values in output dataframe
+                    growth_rate_column: mv_mu_max # The column name for OD values in output dataframe
                     success_column: success # The column name for success status in output dataframe
                     verbose: true
                     exchange_suffix: _i
@@ -78,7 +78,7 @@ pipelines:
                 method: create_exchange_bounds_template
                 parameters:
                     exchange_matrix: df_amn_dataset # The 'df_amn_dataset' output defined above
-                    growth_rate_column: mu_max # The column name for growth rates in output dataframe
+                    growth_rate_column: mv_mu_max # The column name for growth rates in output dataframe
                     default_level: 1 # Default level for supplemented exchanges
                     default_max_value: 3 # Default bounds for exchange reactions
                     sbml_bounds: model_sbml_bounds # The 'model_sbml_bounds' input defined above
@@ -124,7 +124,7 @@ pipelines:
                     growth_rates_df: growth_data # The 'growth_data' input defined above
                     supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
                     supplement_column: supplements_first # The column name for OD values in output dataframe
-                    growth_rate_column: mu_max # The column name for OD values in output dataframe
+                    growth_rate_column: mv_mu_max # The column name for OD values in output dataframe
                     success_column: success # The column name for success status in output dataframe
                     verbose: true
                     exchange_suffix: _i
@@ -169,7 +169,7 @@ pipelines:
                 method: create_exchange_bounds_template
                 parameters:
                     exchange_matrix: df_amn_dataset # The 'df_amn_dataset' output defined above
-                    growth_rate_column: mu_max # The column name for growth rates in output dataframe
+                    growth_rate_column: mv_mu_max # The column name for growth rates in output dataframe
                     default_level: 1 # Default level for supplemented exchanges
                     default_max_value: 1000 # Default bounds for exchange reactions
                     sbml_bounds: model_sbml_bounds # The 'model_sbml_bounds' input defined above
@@ -218,7 +218,7 @@ pipelines:
                     growth_rates_df: growth_data # The 'growth_data' input defined above
                     supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
                     supplement_column: supplements_first # The column name for OD values in output dataframe
-                    growth_rate_column: mu_max_mean # The column name for OD values in output dataframe
+                    growth_rate_column: mv_mu_max_mean # The column name for OD values in output dataframe
                     success_column: success_first # The column name for success status in output dataframe
                     verbose: true
                     exchange_suffix: _i
@@ -263,7 +263,7 @@ pipelines:
                 method: create_exchange_bounds_template
                 parameters:
                     exchange_matrix: df_amn_dataset # The 'df_amn_dataset' output defined above
-                    growth_rate_column: mu_max # The column name for growth rates in output dataframe
+                    growth_rate_column: mv_mu_max # The column name for growth rates in output dataframe
                     default_level: 1 # Default level for supplemented exchanges
                     default_max_value: 1000 # Default bounds for exchange reactions
                     sbml_bounds: model_sbml_bounds # The 'model_sbml_bounds' input defined above

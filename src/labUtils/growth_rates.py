@@ -54,6 +54,197 @@ def transform_to_log_n_n0(
     return df_transformed
 
 
+def fit_max_growth_rate_per_series(
+    df: pd.DataFrame,
+    time_col: str = "time_h",  # or "time_min" (then your mu_max units change accordingly)
+    value_col: str = "od600",
+    group_cols: list[str] = ["well"],
+    min_points: int = 5,  # require at least this many points to fit
+    moving_window_size: int = 5,
+    smoothing_iterations: int = 0,
+    smooth_window_size: int = 2,
+) -> pd.DataFrame:
+    """
+    Finds the maximum growth rate for each series in `df` and returns the fit parameters.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame with time series data
+    time_col : str
+        Column name for time values (default: "time_h")
+    value_col : str
+        Column name for measured values (default: "od600")
+    group_cols : List[str]
+        Columns to group by (default: ["well"])
+    min_points : int
+        Minimum number of points required to fit (default: 5)
+    smoothing_iterations: int (default: 0)
+        Number of smoothing iterations to apply to the data before fitting.
+        Each iteration applies a simple moving average with window size smooth_window_size.
+    smooth_window_size: int (default: 2)
+        Window size for the moving average smoothing.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with one row per series (group), containing:
+        - Group columns (e.g., well)
+        - mu_max: Fit parameter
+        - r2, rmse: Goodness of fit metrics
+        - n: Number of data points
+        - success: Whether fit was successful
+        - message: Status or error message
+        - Metadata columns from original data
+    """
+
+    def curve_smoothing(y):
+        """Simple moving average smoothing with window size smooth_window_size
+
+        This function is originaly from AMN paper's repository.
+        Applies trimmed mean (removing min/max) in a sliding window.
+        """
+        # curve smoothing by running average omitting min and max of the window
+        # input is y, the time series of the OD measures (numpy array)
+        # returns y_smoothed, the same time series after smoothing (numpy array)
+
+        # Handle edge case: if data too small, return as-is
+        if len(y) < 2 * smooth_window_size:
+            return y.copy()
+
+        # Convert to list for easier manipulation, then back to array
+        y_smoothed_list = list(y[:smooth_window_size])
+
+        for i in range(smooth_window_size, len(y) - smooth_window_size):
+            sub_y = np.array(y[i - smooth_window_size : i + smooth_window_size + 1])
+            # Create a copy to avoid modifying the slice
+            sub_y_trimmed = sub_y.copy()
+            i_max = np.argmax(sub_y_trimmed)
+            i_min = np.argmin(sub_y_trimmed)
+            sub_y_trimmed[i_max] = np.nan
+            sub_y_trimmed[i_min] = np.nan
+            y_smoothed_list.append(np.nanmean(sub_y_trimmed))
+
+        y_smoothed_list.extend(y[-smooth_window_size:])
+        return np.array(y_smoothed_list)
+
+    def max_growth_one(gdf: pd.DataFrame) -> dict[str, Any]:
+        """Unified fitting function that handles any combination of fixed parameters."""
+        t = gdf[time_col].to_numpy(dtype=float)
+        y = gdf[value_col].to_numpy(dtype=float)
+        m = np.isfinite(t) & np.isfinite(y)
+        t, y = t[m], y[m]
+
+        # Apply smoothing if requested (only to y, not t)
+        for _ in range(smoothing_iterations):
+            y = curve_smoothing(y)  # Returns array of same length as input y
+            # Note: t stays unchanged - smoothing only affects y values
+
+        out: dict[str, Any] = {"n": int(len(y))}
+
+        # np.exp(0.1) is used as the upper limit, by assuming the data are log(n/n0) transformed
+        if len(y) < min_points or (float(np.nanmax(y)) - float(np.nanmin(y)) <= np.exp(0.1)):
+            out.update({"success": False, "message": "insufficient or flat data"})
+            return out
+
+        # Check if we have enough points for the moving window
+        if len(y) < moving_window_size:
+            out.update(
+                {
+                    "success": False,
+                    "message": f"insufficient data for window size {moving_window_size} (need >= {moving_window_size} points)",
+                }
+            )
+            return out
+
+        try:
+            t_moving_windows = [t[i : i + moving_window_size] for i in range(len(t) - moving_window_size + 1)]
+            y_moving_windows = [y[i : i + moving_window_size] for i in range(len(y) - moving_window_size + 1)]
+
+            growth_rates = []
+            r_squared_values = []
+
+            for tw, yw in zip(t_moving_windows, y_moving_windows, strict=True):
+                # Check for numerical stability
+                if len(np.unique(tw)) < 2:  # All same time points
+                    growth_rates.append(np.nan)
+                    r_squared_values.append(np.nan)
+                    continue
+
+                # Fit linear model: y = slope * t + intercept
+                slope, intercept = np.polyfit(tw, yw, 1)
+
+                # Calculate proper r²
+                y_pred = slope * tw + intercept
+                ss_res = np.sum((yw - y_pred) ** 2)
+                ss_tot = np.sum((yw - np.mean(yw)) ** 2)
+                r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+                growth_rates.append(slope)
+                r_squared_values.append(r2)
+
+            # Handle case where all growth rates are NaN
+            valid_mask = np.isfinite(growth_rates)
+            if not np.any(valid_mask):
+                out.update({"success": False, "message": "all windows produced invalid growth rates"})
+                return out
+
+            # Find maximum growth rate among valid windows
+            valid_growth_rates = np.array(growth_rates)
+            max_growth_rate_index = np.nanargmax(valid_growth_rates)
+            max_growth_rate = float(growth_rates[max_growth_rate_index])
+            max_r2 = float(r_squared_values[max_growth_rate_index])
+
+            # Calculate RMSE
+            tw_max = t_moving_windows[max_growth_rate_index]
+            yw_max = y_moving_windows[max_growth_rate_index]
+            slope_max, intercept_max = np.polyfit(tw_max, yw_max, 1)
+            y_pred_max = slope_max * tw_max + intercept_max
+            rmse = float(np.sqrt(np.mean((yw_max - y_pred_max) ** 2)))
+
+            out.update(
+                {
+                    "success": True,
+                    "message": "ok",
+                    "mv_mu_max": max_growth_rate,
+                    "mv_r2": max_r2,  # r²
+                    "mv_rmse": rmse,  # RMSE
+                }
+            )
+        except (RuntimeError, ValueError, np.linalg.LinAlgError) as ex:  # Added LinAlgError
+            out.update({"success": False, "message": str(ex)[:1000]})
+
+        return out
+
+    # Fit each series
+    param_rows = []
+
+    # Identify time-related columns that should be excluded from metadata
+    time_related_cols = ["time_label", "time_h", "time_min", "time_h_int", "time_min_int"]
+
+    # Identify metadata columns (all columns except group_cols, time_cols, value_col, well position cols)
+    exclude_cols = set(group_cols + time_related_cols + [time_col, value_col])
+    metadata_cols = [col for col in df.columns if col not in exclude_cols]
+
+    for keys, g in df.groupby(group_cols, sort=False):
+        keys = (keys,) if not isinstance(keys, tuple) else keys
+        result = max_growth_one(g)
+        row = {col: val for col, val in zip(group_cols, keys)}
+        row.update({k: v for k, v in result.items() if k != "pred"})
+
+        # Add metadata from the first row of the group
+        first_row = g.iloc[0]
+        for col in metadata_cols:
+            if col in first_row.index:
+                row[col] = first_row[col]
+
+        param_rows.append(row)
+
+    params_df = pd.DataFrame(param_rows)
+
+    return params_df
+
+
 def fit_modified_gompertz_per_series(
     df: pd.DataFrame,
     time_col: str = "time_h",  # or "time_min" (then your mu_max units change accordingly)
@@ -350,7 +541,7 @@ def plot_and_save(
         If provided, error bars will be added to the scatter plot.
     """
     # Only merge the fit parameters, not metadata columns that already exist in preds_df
-    fit_cols = group_cols + ["y0", "A", "mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
+    fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
     params_to_merge = params_df[[col for col in fit_cols if col in params_df.columns]]
     df_combined = preds_df.merge(params_to_merge, on=group_cols, how="left")
 
@@ -411,10 +602,19 @@ def plot_and_save(
 
         # Get the first key value for filename and title
         first_key = keys if not isinstance(keys, tuple) else keys[0]
-        plt.title(
-            f"Growth Curve for  well {first_key} growth_rate:{g['mu_max'].iloc[0]:.4f} 1/h \n"
-            f"y0={g['y0'].iloc[0]:.3f}, A={g['A'].iloc[0]:.3f}, lambda={g['lambda'].iloc[0]:.3f}"
-        )
+        if "mv_mu_max" in g.columns:
+            plt.title(
+                f"Growth Curve for  well {first_key} \n"
+                f" growth_rate (moving window):{g['mv_mu_max'].iloc[0]:.4f} 1/h, "
+                f" growth_rate (Gompertz):{g['mu_max'].iloc[0]:.4f} 1/h \n"
+                f"y0={g['y0'].iloc[0]:.3f}, A={g['A'].iloc[0]:.3f}, lambda={g['lambda'].iloc[0]:.3f}"
+            )
+        else:
+            plt.title(
+                f"Growth Curve for  well {first_key} \n"
+                f" growth_rate:{g['mu_max'].iloc[0]:.4f} 1/h \n"
+                f"y0={g['y0'].iloc[0]:.3f}, A={g['A'].iloc[0]:.3f}, lambda={g['lambda'].iloc[0]:.3f}"
+            )
         plt.legend()
         # plt.ylim(bottom=0)
         plt.grid(True)
