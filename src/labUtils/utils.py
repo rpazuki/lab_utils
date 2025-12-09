@@ -8,6 +8,16 @@ import yaml
 from labUtils.pipelines import DFPipeline, build_pipeline_from_yaml_string
 
 
+def list_folders(path: Path) -> list[Path]:
+    """List all folders in the given directory path."""
+    path = Path(path)
+    if not path.exists() or not path.is_dir():
+        raise ValueError(f"Provided path is not a valid directory: {path}")
+
+    folders = [item for item in path.iterdir() if item.is_dir()]
+    return folders
+
+
 def read_csv(path: Path) -> pd.DataFrame:
     """Utility function to read a CSV file into a DataFrame."""
     df = pd.read_csv(path)
@@ -130,6 +140,7 @@ def build_pipeline_from_yaml(
     pipeline_name: str,
     output_dir: str | Path | None = None,
     input_sources: dict[str, str] | None = None,
+    process_arg_mapping: dict[str, dict[str, str]] | None = None,
 ) -> tuple[DFPipeline, dict]:
     """Build a DFPipeline from a YAML configuration file.
 
@@ -147,6 +158,9 @@ def build_pipeline_from_yaml(
         field in the YAML for specified inputs. Allows reusing the same pipeline
         configuration with different input files.
         Example: {'raw_data': 'file1.csv', 'meta_data': 'metadata1.csv'}
+    process_arg_mapping : dict[str, dict[str, str]], optional
+        Dictionary mapping process names to argument mappings. This allows
+        overriding or remapping arguments for specific processes.
 
     Returns
     -------
@@ -192,7 +206,11 @@ def build_pipeline_from_yaml(
 
     # Delegate to build_pipeline_from_yaml_string
     return build_pipeline_from_yaml_string(
-        yaml_string=yaml_string, pipeline_name=pipeline_name, output_dir=output_dir, input_sources=input_sources
+        yaml_string=yaml_string,
+        pipeline_name=pipeline_name,
+        output_dir=output_dir,
+        input_sources=input_sources,
+        process_arg_mapping=process_arg_mapping,
     )
 
 
@@ -201,10 +219,17 @@ def build_pipeline_from_lib_yaml(
     pipeline_name: str,
     output_dir: str | Path | None = None,
     input_sources: dict[str, str] | None = None,
+    process_arg_mapping: dict[str, dict[str, str]] | None = None,
 ) -> tuple[DFPipeline, dict]:
     """Build a data processing pipeline from a library YAML file."""
     yaml_path = Path(__file__).parent / "yamls" / lib_pipelines_yaml_name
-    return build_pipeline_from_yaml(yaml_path, pipeline_name, output_dir=output_dir, input_sources=input_sources)
+    return build_pipeline_from_yaml(
+        yaml_path,
+        pipeline_name,
+        output_dir=output_dir,
+        input_sources=input_sources,
+        process_arg_mapping=process_arg_mapping,
+    )
 
 
 def smart_join(
@@ -281,3 +306,77 @@ def smart_join(
         merged = merged.drop(columns=cols_to_drop)
 
     return merged
+
+
+def collate_by_strain(
+    folders_list: list[Path],
+    csv_file_name: str = "growth_rates.csv",
+    strain_col: str = "strain",
+    create_output_folder: bool = True,
+    output_dir: str | Path | None = None,
+    groupby_pattern: str | None = r"[A-Za-z]+",
+) -> pd.DataFrame:
+    """Collate data by strain, averaging values across wells for each time point.
+
+    Parameters
+    ----------
+    folders_list : list[Path]
+        List of folder paths containing parsed data files
+    csv_file_name : str, optional
+        Name of the CSV file to read from each folder, default 'growth_rates.csv'
+    strain_col : str, optional
+        Column name for strain identifiers, default 'strain'
+    create_output_folder : bool, optional
+        Whether to create an output folder for collated files, default True
+    output_dir : str | Path, optional
+        Directory to save collated files. If None, uses parent of first folder in folders_list
+    groupby_pattern : str | None, optional
+        Regex pattern to extract grouping key from strain_col values.
+        Default is "[A-Za-z]+" (one or more letters - extracts alphabetical part only).
+        Example: "strainA1", "strainA2" -> grouped as "strainA"
+        If None, uses strain_col values as-is without pattern extraction.
+
+    Returns
+    -------
+    pd.DataFrame
+        Collated DataFrame with mean values per strain and time point
+    """
+    assert len(folders_list) > 0, "folders_list must contain at least one folder path"
+    if output_dir is not None:
+        parent_folder = Path(output_dir)
+        parent_folder.mkdir(exist_ok=True)
+    else:
+        parent_folder: Path = folders_list[0].parent
+    df = pd.read_csv(folders_list[0] / csv_file_name)
+    df["experiment"] = folders_list[0].name
+    for folder in folders_list[1:]:
+        if folder == output_dir:
+            continue
+        df_new = pd.read_csv(folder / csv_file_name)
+        df_new["experiment"] = folder.name
+        df = pd.concat([df, df_new], ignore_index=True)
+    # Apply pattern extraction if specified
+    if groupby_pattern is not None:
+        df["_groupby_key"] = df[strain_col].astype(str).str.extract(f"({groupby_pattern})", expand=False)
+        groupby_col = "_groupby_key"
+    else:
+        groupby_col = strain_col
+
+    report = []
+    grouped = df.groupby([groupby_col])
+    for g in grouped.groups:
+        group_df = grouped.get_group((g,)).copy()
+        # Drop the temporary groupby key if it was created
+        if groupby_pattern is not None:
+            group_df = group_df.drop(columns=["_groupby_key"])
+        output_file_name = f"{g}_growth_rates_collated.csv"
+        if create_output_folder:
+            output_folder = parent_folder / str(g)
+            output_folder.mkdir(exist_ok=True)
+            output_file_name = output_folder / output_file_name
+        else:
+            output_file_name = parent_folder / output_file_name
+        group_df.to_csv(output_file_name, index=False)
+        report.append(str(output_file_name))
+
+    return pd.DataFrame({"output_file": report})

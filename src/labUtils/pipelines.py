@@ -392,7 +392,9 @@ class DFPipeline(AbstractPipeline):
                     previous_process = "(input of the pipline)"
                 raise IncompatibleArgsException(
                     f"The process '{name(process)}' received incompatible payload from "
-                    f"the previous process '{previous_process}'"
+                    f"the previous process '{previous_process}'\n"
+                    f"provided arguments: {list(payload_kwargs.keys())}\n"
+                    f"e.args={e.args}\n"
                 ) from e
             else:
                 raise e
@@ -555,6 +557,7 @@ def build_pipeline_from_yaml_string(
     pipeline_name: str,
     output_dir: str | Path | None = None,
     input_sources: dict[str, str] | None = None,
+    process_arg_mapping: dict[str, dict[str, str]] | None = None,
 ) -> tuple[DFPipeline, dict]:
     """Build a DFPipeline from a YAML configuration string.
 
@@ -572,6 +575,9 @@ def build_pipeline_from_yaml_string(
         field in the YAML for specified inputs. Allows reusing the same pipeline
         configuration with different input files.
         Example: {'raw_data': 'file1.csv', 'meta_data': 'metadata1.csv'}
+    process_arg_mapping : dict[str, dict[str, str]], optional
+        Dictionary mapping process names to argument mappings. This allows
+        overriding or remapping arguments for specific processes.
 
     Returns
     -------
@@ -680,6 +686,12 @@ def build_pipeline_from_yaml_string(
                 raise ValueError(f"Process '{process_name}' must have 'method' field")
             if "parameters" not in process_spec:
                 raise ValueError(f"Process '{process_name}' must have 'parameters' field")
+
+            # Apply argument mapping overrides if provided
+            if process_arg_mapping and process_name in process_arg_mapping:
+                arg_overrides = process_arg_mapping[process_name]
+                for param_key, override_value in arg_overrides.items():
+                    process_spec["parameters"][param_key] = override_value
 
             # Create a ProcessLogic wrapper for DFProcess
             def make_df_process(name, spec):

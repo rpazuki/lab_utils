@@ -1,0 +1,32 @@
+pipelines:
+    ##################################################################################
+    # Combining all
+    - collate_per_strain_pipeline:
+        Inputs:
+            #####################################
+            # folders list
+            - folders_list:
+                - src: EMPTY
+                - package:  labUtils.utils
+                - method: list_folders
+        Processes:
+            #############################################
+            # load and collate all data in the folders list
+            # and save them into different dataframes based
+            # on thier strain names
+            - saved_dataframes: # output dataframe name
+                package: labUtils.utils
+                method: collate_by_strain
+                parameters:
+                    folders_list: folders_list
+                    csv_file_name: growth_rates.csv # The name of the CSV file to collate in each folder
+                    strain_col: strain # The column name for strain identifiers
+                    create_output_folder: true # Whether to create separate folders for each strain
+                    groupby_pattern: "[A-Za-z]+" # Regex pattern to extract alphabetical part only (letters)
+                                                  # e.g., "strainA1", "strainA2" -> grouped as "strainA"
+                                                  # Use double quotes and escape backslash as \\
+                                                  # Set to null to use strain names as-is
+        Outputs:
+            #####################################
+            # save the list of saved dataframes
+            - saved_dataframes: report.csv
