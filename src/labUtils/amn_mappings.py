@@ -45,7 +45,7 @@
 import difflib
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import pandas as pd
 
@@ -54,16 +54,17 @@ import pandas as pd
 
 def create_supplement_exchange_matrix(
     growth_rates_df: pd.DataFrame,
-    supplement_to_exchange_map: Dict[str, str],
+    supplement_to_exchange_map: dict[str, str],
     supplement_column: str = "supplements",
     growth_rate_column: str = "mu_max",
     success_column: str = "success",
-    baseline_exchanges: Optional[List[str]] = None,
-    custom_mapping: Optional[Dict[str, str]] = None,
+    baseline_exchanges: list[str] | None = None,
+    custom_mapping: dict[str, str] | None = None,
+    custom_mapping_file: str | Path | None = None,
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
     verbose: bool = False,
-    exchange_suffix: Optional[str] = None,
+    exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
     """
     Create a binary matrix mapping supplements to exchange reactions.
@@ -94,9 +95,21 @@ def create_supplement_exchange_matrix(
         List of exchange reactions that are always present (minimal media components).
         These will be set to 1 for all rows.
     custom_mapping : Optional[Dict[str, str]]
-        User-defined mapping that takes precedence over supplement_to_exchange_map.
-        Use this to override specific mappings or add custom supplement names.
+        User-defined mapping that takes precedence over custom_mapping_file and
+        supplement_to_exchange_map. Use this to override specific mappings or add
+        custom supplement names.
         Example: {"my_glucose": "EX_glc__D_e", "special_carbon": "EX_custom_e"}
+    custom_mapping_file : Optional[Union[str, Path]]
+        Path to a YAML file containing custom exchange mappings.
+        If not provided, defaults to 'custom_exchange_mapping.yaml' in the
+        'yamls' directory relative to this module.
+        The YAML file should have a 'custom_mapping' key with supplement->exchange mappings.
+        These mappings have precedence over supplement_to_exchange_map but lower
+        precedence than the custom_mapping parameter.
+        Example YAML structure:
+            custom_mapping:
+                glucose: EX_glc__D_e
+                adenine: EX_ade_e
     separator : str
         Character used to separate multiple supplements in the supplement column (default: ";")
     fuzzy_threshold : float
@@ -118,12 +131,9 @@ def create_supplement_exchange_matrix(
 
     Examples
     --------
-    >>> # Parse SBML file first
+    >>> # Scenario 1: Use default YAML file (custom_exchange_mapping.yaml)
+    >>> # The function automatically loads yamls/custom_exchange_mapping.yaml
     >>> mapping = parse_sbml_exchanges("iML1515.xml")
-    >>> # Or use default mapping
-    >>> mapping = load_default_iml1515_mapping()
-    >>>
-    >>> # Create matrix
     >>> baseline = load_minimal_media_exchanges()
     >>> matrix = create_supplement_exchange_matrix(
     ...     growth_rates_df,
@@ -131,12 +141,31 @@ def create_supplement_exchange_matrix(
     ...     baseline_exchanges=baseline
     ... )
     >>>
-    >>> # With custom overrides
+    >>> # Scenario 2: Use custom YAML file
+    >>> matrix = create_supplement_exchange_matrix(
+    ...     growth_rates_df,
+    ...     supplement_to_exchange_map=mapping,
+    ...     custom_mapping_file="my_custom_mapping.yaml",
+    ...     baseline_exchanges=baseline
+    ... )
+    >>>
+    >>> # Scenario 3: Override YAML file values with custom_mapping parameter
+    >>> # Precedence: custom_mapping > YAML file > supplement_to_exchange_map
     >>> custom = {"weird_glucose": "EX_glc__D_e"}
     >>> matrix = create_supplement_exchange_matrix(
     ...     growth_rates_df,
     ...     supplement_to_exchange_map=mapping,
-    ...     custom_mapping=custom,
+    ...     custom_mapping_file="my_mapping.yaml",
+    ...     custom_mapping=custom,  # This takes highest precedence
+    ...     baseline_exchanges=baseline
+    ... )
+    >>>
+    >>> # Scenario 4: Disable YAML file loading by passing empty dict
+    >>> # (Only use supplement_to_exchange_map and custom_mapping)
+    >>> matrix = create_supplement_exchange_matrix(
+    ...     growth_rates_df,
+    ...     supplement_to_exchange_map=mapping,
+    ...     custom_mapping_file="",  # Empty string disables file loading
     ...     baseline_exchanges=baseline
     ... )
 
@@ -148,17 +177,49 @@ def create_supplement_exchange_matrix(
     - Unmapped supplements trigger a warning with details
     - Baseline exchanges are always set to 1 for all rows
     - Growth rate column name is preserved as specified in growth_rate_column parameter
-    - Custom mapping takes precedence over supplement_to_exchange_map for matching
+    - Mapping precedence (highest to lowest):
+        1. custom_mapping parameter
+        2. custom_mapping_file (YAML file)
+        3. supplement_to_exchange_map parameter
     """
+    # Load mappings from YAML file if provided, or use default
+    file_mapping: dict[str, str] = {}
+    if custom_mapping_file is None:
+        # Default to custom_exchange_mapping.yaml in yamls directory (same directory as amn_pipeline.yaml)
+        default_yaml_path = Path(__file__).parent / "yamls" / "custom_exchange_mapping.yaml"
+        if default_yaml_path.exists():
+            custom_mapping_file = default_yaml_path
+
+    if custom_mapping_file is not None and str(custom_mapping_file).strip():
+        try:
+            import yaml
+
+            yaml_path = Path(custom_mapping_file)
+            if yaml_path.exists():
+                with open(yaml_path, encoding="utf-8") as f:
+                    yaml_data = yaml.safe_load(f)
+                    if yaml_data and "custom_mapping" in yaml_data:
+                        file_mapping = yaml_data["custom_mapping"] or {}
+        except Exception as e:
+            logging.warning(f"Failed to load custom mapping file {custom_mapping_file}: {e}")
+
     # Normalize mapping keys (lowercase, stripped)
-    # Start with base mapping, then apply custom mapping (which takes precedence)
-    normalized_map: Dict[str, str] = {}
+    # Build mapping with precedence: base -> file -> custom
+    normalized_map: dict[str, str] = {}
+
+    # Level 1: Base mapping from supplement_to_exchange_map
     for k, v in supplement_to_exchange_map.items():
         if k is None:
             continue
         normalized_map[k.strip().lower()] = v
 
-    # Apply custom mapping overrides
+    # Level 2: File mapping (overrides base)
+    for k, v in file_mapping.items():
+        if k is None:
+            continue
+        normalized_map[k.strip().lower()] = v
+
+    # Level 3: Custom mapping parameter (highest precedence, overrides all)
     if custom_mapping:
         for k, v in custom_mapping.items():
             if k is None:
@@ -174,10 +235,10 @@ def create_supplement_exchange_matrix(
                 unique_supplements.add(p.lower())
 
     # Map supplements -> exchange reaction ids using exact then fuzzy matching
-    supplement_to_rxn: Dict[str, str] = {}
-    unmapped: List[str] = []
-    exact_matches: List[Tuple[str, str]] = []
-    fuzzy_matches: List[Tuple[str, str, str]] = []  # (supplement, matched_key, reaction)
+    supplement_to_rxn: dict[str, str] = {}
+    unmapped: list[str] = []
+    exact_matches: list[tuple[str, str]] = []
+    fuzzy_matches: list[tuple[str, str, str]] = []  # (supplement, matched_key, reaction)
     map_keys = list(normalized_map.keys())
 
     for supp in sorted(unique_supplements):
@@ -199,9 +260,9 @@ def create_supplement_exchange_matrix(
 
     # Print verbose output if requested
     if verbose:
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("Supplement to Exchange Reaction Mapping")
-        print("="*70)
+        print("=" * 70)
 
         if exact_matches:
             print(f"\nExact matches ({len(exact_matches)}):")
@@ -218,7 +279,7 @@ def create_supplement_exchange_matrix(
             for supp in unmapped:
                 print(f"  {supp}")
 
-        print("\n" + "="*70 + "\n")
+        print("\n" + "=" * 70 + "\n")
 
     # if unmapped:
     #     warnings.warn(f"The following supplements could not be mapped to exchange reactions: {unmapped}")
@@ -228,13 +289,13 @@ def create_supplement_exchange_matrix(
     all_exchanges = sorted(set(mapped_rxns + (baseline_exchanges or [])))
 
     # Build rows
-    rows: List[Dict[str, Union[int, float, None]]] = []
+    rows: list[dict[str, int | float | None]] = []
     for _, row in growth_rates_df.iterrows():
         # Skip rows where success column exists and is False
         if success_column in growth_rates_df.columns and not row[success_column]:
             continue
 
-        r: Dict[str, Union[int, float, None]] = {ex: 0 for ex in all_exchanges}
+        r: dict[str, int | float | None] = dict.fromkeys(all_exchanges, 0)
 
         # baseline -> always 1 if provided
         if baseline_exchanges:
@@ -285,11 +346,11 @@ def create_supplement_exchange_matrix(
 
 def get_supplement_mapping(
     growth_rates_df: pd.DataFrame,
-    supplement_to_exchange_map: Dict[str, str],
+    supplement_to_exchange_map: dict[str, str],
     supplement_column: str = "supplements",
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get the supplement->reaction mapping for auditing purposes.
 
@@ -327,7 +388,7 @@ def get_supplement_mapping(
     >>> print("Unmapped:", mapping_info["unmapped"])
     """
     # Normalize mapping keys (lowercase, stripped)
-    normalized_map: Dict[str, str] = {}
+    normalized_map: dict[str, str] = {}
     for k, v in supplement_to_exchange_map.items():
         if k is None:
             continue
@@ -342,9 +403,9 @@ def get_supplement_mapping(
                 unique_supplements.add(p.lower())
 
     # Map supplements -> exchange reaction ids
-    exact_matches: Dict[str, str] = {}
-    fuzzy_matches: Dict[str, str] = {}
-    unmapped: List[str] = []
+    exact_matches: dict[str, str] = {}
+    fuzzy_matches: dict[str, str] = {}
+    unmapped: list[str] = []
 
     map_keys = list(normalized_map.keys())
 
@@ -363,14 +424,10 @@ def get_supplement_mapping(
 
         unmapped.append(supp)
 
-    return {
-        "exact_matches": exact_matches,
-        "fuzzy_matches": fuzzy_matches,
-        "unmapped": unmapped
-    }
+    return {"exact_matches": exact_matches, "fuzzy_matches": fuzzy_matches, "unmapped": unmapped}
 
 
-def parse_sbml_exchanges(sbml_path: Union[str, Path]) -> Dict[str, str]:
+def parse_sbml_exchanges(sbml_path: str | Path) -> dict[str, str]:
     """
     Parse SBML file to extract exchange reactions and metabolite names.
 
@@ -398,7 +455,7 @@ def parse_sbml_exchanges(sbml_path: Union[str, Path]) -> Dict[str, str]:
         import cobra
 
         # Suppress COBRApy INFO logging
-        logging.getLogger('cobra').setLevel(logging.WARNING)
+        logging.getLogger("cobra").setLevel(logging.WARNING)
 
         model = cobra.io.read_sbml_model(str(sbml_path))
 
@@ -420,7 +477,7 @@ def parse_sbml_exchanges(sbml_path: Union[str, Path]) -> Dict[str, str]:
         return _parse_sbml_exchanges_fallback(sbml_path)
 
 
-def _parse_sbml_exchanges_fallback(sbml_path: Union[str, Path]) -> Dict[str, str]:
+def _parse_sbml_exchanges_fallback(sbml_path: str | Path) -> dict[str, str]:
     """
     Fallback XML parser for SBML files when COBRApy is not available.
 
@@ -462,8 +519,8 @@ def create_exchange_bounds_template(
     growth_rate_column: str = "mu_max",
     default_level: int = 1,
     default_max_value: int = 1000,
-    sbml_bounds: Optional[Dict[str, Tuple[int, int]]] = None,
-    custom_bounds: Optional[Dict[str, Tuple[int, int]]] = None,
+    sbml_bounds: dict[str, tuple[int, int]] | None = None,
+    custom_bounds: dict[str, tuple[int, int]] | None = None,
 ) -> pd.DataFrame:
     """
     Create a template dataframe for exchange reaction bounds configuration.
@@ -556,9 +613,7 @@ def create_exchange_bounds_template(
     exchange_cols = [col for col in exchange_matrix.columns if col != growth_rate_column]
 
     # Create the template dataframe
-    template_data: Dict[str, List[Union[str, int]]] = {
-        "name": ["level", "max_value", "ratio_drawing"]
-    }
+    template_data: dict[str, list[str | int]] = {"name": ["level", "max_value", "ratio_drawing"]}
 
     # Add columns for each exchange reaction with values
     for col in exchange_cols:
@@ -579,9 +634,9 @@ def create_exchange_bounds_template(
 
 
 def parse_sbml_exchange_bounds(
-    sbml_path: Union[str, Path],
+    sbml_path: str | Path,
     default_level: int = 1,
-) -> Dict[str, Tuple[int, int]]:
+) -> dict[str, tuple[int, int]]:
     """
     Parse SBML file to extract exchange reaction bounds (upper bounds).
 
@@ -627,7 +682,7 @@ def parse_sbml_exchange_bounds(
         import cobra
 
         # Suppress COBRApy INFO logging
-        logging.getLogger('cobra').setLevel(logging.WARNING)
+        logging.getLogger("cobra").setLevel(logging.WARNING)
 
         model = cobra.io.read_sbml_model(str(sbml_path))
 
@@ -638,7 +693,7 @@ def parse_sbml_exchange_bounds(
                 upper_bound = reaction.upper_bound
 
                 # Cap very large or infinite bounds at 1000
-                if upper_bound > 10000 or upper_bound == float('inf'):
+                if upper_bound > 10000 or upper_bound == float("inf"):
                     max_value = 1000
                 else:
                     max_value = int(upper_bound)
@@ -654,9 +709,9 @@ def parse_sbml_exchange_bounds(
 
 
 def _parse_sbml_exchange_bounds_fallback(
-    sbml_path: Union[str, Path],
+    sbml_path: str | Path,
     default_level: int = 1,
-) -> Dict[str, Tuple[int, int]]:
+) -> dict[str, tuple[int, int]]:
     """
     Fallback XML parser for SBML exchange bounds when COBRApy is not available.
 
@@ -697,7 +752,7 @@ def _parse_sbml_exchange_bounds_fallback(
                     if "upper" in param_id.lower() or "ub" in param_id.lower():
                         try:
                             value = float(param.get("value", "1000"))
-                            if value > 10000 or value == float('inf'):
+                            if value > 10000 or value == float("inf"):
                                 upper_bound = 1000
                             else:
                                 upper_bound = int(value)
@@ -709,7 +764,7 @@ def _parse_sbml_exchange_bounds_fallback(
     return bounds_map
 
 
-def load_default_iml1515_mapping() -> Dict[str, str]:
+def load_default_iml1515_mapping() -> dict[str, str]:
     """
     Load a default mapping for iML1515 E. coli model.
 
@@ -732,14 +787,12 @@ def load_default_iml1515_mapping() -> Dict[str, str]:
         "melibiose": "EX_melib_e_i",
         "trehalose": "EX_tre_e_i",
         "glycerol": "EX_glyc_e_i",
-
         # Organic acids
         "acetate": "EX_ac_e_i",
         "pyruvate": "EX_pyr_e_i",
         "succinate": "EX_succ_e_i",
         "lactate": "EX_lac__D_e_i",
         "d-lactate": "EX_lac__D_e_i",
-
         # Amino acids
         "alanine": "EX_ala__L_e_i",
         "l-alanine": "EX_ala__L_e_i",
@@ -748,7 +801,6 @@ def load_default_iml1515_mapping() -> Dict[str, str]:
         "threonine": "EX_thr__L_e_i",
         "l-threonine": "EX_thr__L_e_i",
         "glycine": "EX_gly_e_i",
-
         # Nucleobases
         "adenine": "EX_ade_e",
         "uracil": "EX_ura_e",
@@ -758,7 +810,7 @@ def load_default_iml1515_mapping() -> Dict[str, str]:
     }
 
 
-def load_minimal_media_exchanges() -> List[str]:
+def load_minimal_media_exchanges() -> list[str]:
     """
     Load standard minimal media exchange reactions for E. coli.
 
@@ -774,27 +826,27 @@ def load_minimal_media_exchanges() -> List[str]:
     and represent the minimal requirements for growth.
     """
     return [
-        "EX_pi_e_i",      # Phosphate
-        "EX_co2_e_i",     # Carbon dioxide
-        "EX_fe3_e_i",     # Iron (III)
-        "EX_h_e_i",       # Proton
-        "EX_mn2_e_i",     # Manganese
-        "EX_fe2_e_i",     # Iron (II)
-        "EX_zn2_e_i",     # Zinc
-        "EX_mg2_e_i",     # Magnesium
-        "EX_ca2_e_i",     # Calcium
-        "EX_ni2_e_i",     # Nickel
-        "EX_cu2_e_i",     # Copper
-        "EX_sel_e_i",     # Selenium
-        "EX_cobalt2_e_i", # Cobalt
-        "EX_h2o_e_i",     # Water
-        "EX_mobd_e_i",    # Molybdate
-        "EX_so4_e_i",     # Sulfate
-        "EX_nh4_e_i",     # Ammonium
-        "EX_k_e_i",       # Potassium
-        "EX_na1_e_i",     # Sodium
-        "EX_cl_e_i",      # Chloride
-        "EX_o2_e_i",      # Oxygen
-        "EX_tungs_e_i",   # Tungsten
-        "EX_slnt_e_i",    # Selenite
+        "EX_pi_e_i",  # Phosphate
+        "EX_co2_e_i",  # Carbon dioxide
+        "EX_fe3_e_i",  # Iron (III)
+        "EX_h_e_i",  # Proton
+        "EX_mn2_e_i",  # Manganese
+        "EX_fe2_e_i",  # Iron (II)
+        "EX_zn2_e_i",  # Zinc
+        "EX_mg2_e_i",  # Magnesium
+        "EX_ca2_e_i",  # Calcium
+        "EX_ni2_e_i",  # Nickel
+        "EX_cu2_e_i",  # Copper
+        "EX_sel_e_i",  # Selenium
+        "EX_cobalt2_e_i",  # Cobalt
+        "EX_h2o_e_i",  # Water
+        "EX_mobd_e_i",  # Molybdate
+        "EX_so4_e_i",  # Sulfate
+        "EX_nh4_e_i",  # Ammonium
+        "EX_k_e_i",  # Potassium
+        "EX_na1_e_i",  # Sodium
+        "EX_cl_e_i",  # Chloride
+        "EX_o2_e_i",  # Oxygen
+        "EX_tungs_e_i",  # Tungsten
+        "EX_slnt_e_i",  # Selenite
     ]

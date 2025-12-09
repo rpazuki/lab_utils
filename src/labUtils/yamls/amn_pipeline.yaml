@@ -36,20 +36,20 @@ pipelines:
                     success_column: success # The column name for success status in output dataframe
                     verbose: true
                     exchange_suffix: _i
-                    custom_mapping:
-                        glu: EX_glc__D_e
+                    # custom_mapping:
+                    #     glu: EX_glc__D_e
                     baseline_exchanges: #
                         - EX_pi_e
-                        - EX_co2_e
+                        - EX_co2_e #
                         - EX_fe3_e
-                        - EX_h_e
+                        - EX_h_e #
                         - EX_pro__L_e
                         - EX_glyc_e
                         - EX_mn2_e
                         - EX_ala__L_e
                         - EX_fe2_e
-                        - EX_gal_e
-                        - EX_gly_e
+                        - EX_gal_e # !!!!!
+                        - EX_gly_e #
                         - EX_zn2_e
                         - EX_mg2_e
                         - EX_ca2_e
@@ -57,15 +57,15 @@ pipelines:
                         - EX_cu2_e
                         - EX_sel_e
                         - EX_cobalt2_e
-                        - EX_h2o_e
+                        - EX_h2o_e #
                         - EX_mobd_e
                         - EX_so4_e
                         - EX_thr__L_e
-                        - EX_nh4_e
-                        - EX_k_e
+                        - EX_nh4_e #
+                        - EX_k_e #
                         - EX_na1_e
                         - EX_cl_e
-                        - EX_o2_e
+                        - EX_o2_e #
                         - EX_tungs_e
                         - EX_slnt_e
                     separator: ; #
@@ -128,8 +128,8 @@ pipelines:
                     success_column: success # The column name for success status in output dataframe
                     verbose: true
                     exchange_suffix: _i
-                    custom_mapping:
-                        glu: EX_glc__D_e
+                    # custom_mapping:
+                    #     glu: EX_glc__D_e
                     baseline_exchanges: #
                         - EX_pi_e
                         - EX_co2_e
@@ -222,8 +222,8 @@ pipelines:
                     success_column: success_first # The column name for success status in output dataframe
                     verbose: true
                     exchange_suffix: _i
-                    custom_mapping:
-                        glu: EX_glc__D_e
+                    # custom_mapping:
+                    #     glu: EX_glc__D_e
                     baseline_exchanges: #
                         - EX_pi_e
                         - EX_co2_e

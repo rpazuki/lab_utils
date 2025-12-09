@@ -1,0 +1,95 @@
+custom_mapping:
+    # ============================================================================
+    # SUPPLEMENT EXCHANGES - Added compounds for growth experiments
+    # ============================================================================
+
+    # Other non-amino acids
+    succinate: EX_succ_e #
+
+    # Sugars and carbon sources
+    glucose: EX_glc__D_e  # D-Glucose
+    sucrose: EX_sucr_e  #
+
+    # Nucleobases (DNA/RNA bases)
+    adenine: EX_ade_e  # Adenine (DNA/RNA base)
+    guanine: EX_gua_e  # Guanine (DNA/RNA base)
+    cytosine: EX_csn_e  # Cytosine (DNA/RNA base)
+    thymine: EX_thym_e  # Thymine (DNA base)
+    uracil: EX_ura_e  # Uracil (RNA base)
+
+    # Uracil concentration variants
+    uracil_0.5: EX_ura_e
+    uracil_2: EX_ura_e
+    uracil_8: EX_ura_e
+    uracil_22.4: EX_ura_e
+    uracil_64: EX_ura_e
+    uracil_200: EX_ura_e
+    uracil_640: EX_ura_e
+
+    # Standard amino acids (20) - alphabetical order
+    ala: EX_ala__L_e  # Alanine -
+    arg: EX_arg__L_e  # Arginine
+    asn: EX_asn__L_e  # Asparagine
+    asp: EX_asp__L_e  # Aspartate (Aspartic acid)
+    cys: EX_cys__L_e  # Cysteine
+    gln: EX_gln__L_e  # Glutamine
+    glu: EX_glu__L_e  # Glutamate (Glutamic acid)
+    gly: EX_gly_e  # Glycine (Note: no __L suffix) -
+    his: EX_his__L_e  # Histidine
+    ile: EX_ile__L_e  # Isoleucine
+    leu: EX_leu__L_e  # Leucine
+    lys: EX_lys__L_e  # Lysine
+    met: EX_met__L_e  # Methionine
+    phe: EX_phe__L_e  # Phenylalanine
+    pro: EX_pro__L_e  # Proline -
+    ser: EX_ser__L_e  # Serine
+    thr: EX_thr__L_e  # Threonine -
+    trp: EX_trp__L_e  # Tryptophan
+    tyr: EX_tyr__L_e  # Tyrosine
+    val: EX_val__L_e  # Valine
+
+    # ============================================================================
+    # BASELINE EXCHANGES - Media components (salts, ions, gases, etc.)
+    # ============================================================================
+
+    # Inorganic ions and minerals
+    phosphate: EX_pi_e  # Phosphate -
+    sulfate: EX_so4_e  # Sulfate -
+    ammonia: EX_nh4_e  # Ammonia (nitrogen source) -
+    chloride: EX_cl_e  # Chloride -
+
+    # Major cations
+    potassium: EX_k_e  # Potassium (K+) -
+    sodium: EX_na1_e  # Sodium (Na+) -
+    magnesium: EX_mg2_e  # Magnesium (Mg2+) -
+    calcium: EX_ca2_e  # Calcium (Ca2+) -
+
+    # Trace metals (iron)
+    iron_fe2: EX_fe2_e  # Iron (Fe2+, ferrous) -
+    iron_fe3: EX_fe3_e  # Iron (Fe3+, ferric) -
+
+    # Trace metals (other)
+    manganese: EX_mn2_e  # Manganese (Mn2+) -
+    zinc: EX_zn2_e  # Zinc (Zn2+) -
+    copper: EX_cu2_e  # Copper (Cu2+) -
+    nickel: EX_ni2_e  # Nickel (Ni2+) -
+    cobalt: EX_cobalt2_e  # Cobalt (Co2+) -
+
+    # Trace elements (non-metals)
+    molybdate: EX_mobd_e  # Molybdate (molybdenum source) -
+    tungstate: EX_tungs_e  # Tungstate (tungsten source) -
+    selenate: EX_sel_e  # Selenate (selenium source) -
+    selenite: EX_slnt_e  # Selenite (selenium source) -
+
+    # Gases
+    oxygen: EX_o2_e  # Oxygen (O2) -
+    carbon_dioxide: EX_co2_e  # Carbon dioxide (CO2) -
+
+    # Other inorganics
+    water: EX_h2o_e  # Water (H2O) -
+    proton: EX_h_e  # Proton (H+) -
+
+    # Carbon sources (baseline)
+    glycerol: EX_glyc_e  # Glycerol -
+    galactose: EX_gal_e  # D-Galactose
+
