@@ -23,9 +23,12 @@ def build_supplement_mappings(
     supplement_column: str,
     custom_mapping_file: str | Path | None = None,
     custom_mapping: dict[str, str | dict[str, Any]] | None = None,
+    baseline_exchanges: list[str] | None = None,
     separator: str = ";",
     include_mmol: bool = True,
-) -> tuple[dict[str, str], dict[str, float], set[str], dict[str, float]]:
+    fuzzy_threshold: float = 0.6,
+    verbose: bool = False,
+) -> tuple[dict[str, float], dict[str, float], list[str], dict[str, str]]:
     """
     Build normalized supplement mappings, mmol concentrations, and extract unique supplements.
 
@@ -104,6 +107,7 @@ def build_supplement_mappings(
         except Exception as e:
             logging.warning(f"Failed to load custom mapping file {custom_mapping_file}: {e}")
 
+    ###########################################################################
     # Build both mappings simultaneously with precedence: base -> file -> custom
     normalized_map: dict[str, str] = {}
     normalized_map_mmol: dict[str, float] = {}
@@ -184,78 +188,8 @@ def build_supplement_mappings(
             parts = [s.strip() for s in val.split(separator) if s.strip()]
             for p in parts:
                 unique_supplements.add(p.lower())
-    return normalized_map, normalized_map_mmol, unique_supplements, normalized_map_upper_bound
 
-
-def get_supplement_exchange_dataframe(
-    growth_rates_df: pd.DataFrame,
-    mappings: tuple[dict[str, str], dict[str, str], set[str], dict[str, float]],
-    supplement_column: str = "supplements",
-    growth_rate_column: str = "mu_max",
-    success_column: str = "success",
-    baseline_exchanges: list[str] | None = None,
-    separator: str = ";",
-    fuzzy_threshold: float = 0.6,
-    verbose: bool = False,
-    exchange_suffix: str | None = None,
-) -> pd.DataFrame:
-    """
-    Create a binary matrix mapping supplements to exchange reactions.
-
-    This function takes a growth rates dataframe (output from fit_modified_gompertz_per_series)
-    and creates a matrix where:
-    - Each row corresponds to a row in the input dataframe
-    - Each column corresponds to an exchange reaction in the metabolic model
-    - Values are 1 if the metabolite is present in supplements, 0 otherwise
-    - The last column contains the growth rate
-
-    Parameters
-    ----------
-    growth_rates_df : pd.DataFrame
-        Output from fit_modified_gompertz_per_series containing growth rates and metadata
-    normalized_map : Dict[str, str]
-        Normalized mapping from supplement names (lowercase) to exchange reaction IDs.
-        Use _build_supplement_mappings() to generate this from raw mappings.
-    unique_supplements : Set[str]
-        Set of unique supplement names (lowercase) found in the dataframe.
-        Use _build_supplement_mappings() to extract this from the dataframe.
-    supplement_column : str
-        Name of the column containing supplement information (default: "supplements")
-    growth_rate_column : str
-        Name of the column containing growth rate values (default: "mu_max")
-    success_column : str
-        Name of the column containing success status (default: "success")
-    baseline_exchanges : Optional[List[str]]
-        List of exchange reactions that are always present (minimal media components).
-        These will be set to 1 for all rows.
-    separator : str
-        Character used to separate multiple supplements in the supplement column (default: ";")
-    fuzzy_threshold : float
-        Threshold for fuzzy matching of supplement names (default: 0.6).
-        Higher values require closer matches.
-    verbose : bool
-        If True, print detailed information about all supplement-to-exchange mappings,
-        including exact matches, fuzzy matches, and unmapped supplements (default: False)
-    exchange_suffix : Optional[str]
-        Optional suffix to append to all exchange reaction column names (default: None).
-        If provided, all exchange columns will have this suffix added, but the growth_rate_column
-        will remain unchanged. Example: exchange_suffix="_input" would rename "EX_glc__D_e"
-        to "EX_glc__D_e_input"
-
-    Returns
-    -------
-    pd.DataFrame
-        Matrix with exchange reactions as columns and growth rate as the last column
-
-    Notes
-    -----
-    - Supplement names are case-insensitive and whitespace is stripped
-    - If exact match fails, fuzzy matching is attempted with configurable threshold
-    - Unmapped supplements trigger a warning with details
-    - Baseline exchanges are always set to 1 for all rows
-    - Growth rate column name is preserved as specified in growth_rate_column parameter
-    """
-    normalized_map, _, unique_supplements, _ = mappings
+    #############################################################################
     # Map supplements -> exchange reaction ids using exact then fuzzy matching
     supplement_to_rxn: dict[str, str] = {}
     unmapped: list[str] = []
@@ -303,13 +237,74 @@ def get_supplement_exchange_dataframe(
 
         print("\n" + "=" * 70 + "\n")
 
-    # if unmapped:
-    #     warnings.warn(f"The following supplements could not be mapped to exchange reactions: {unmapped}")
-
     # Define all exchange columns: mapped reactions + baseline_exchanges
     mapped_rxns = sorted(set(supplement_to_rxn.values()))
     all_exchanges = sorted(set(mapped_rxns + (baseline_exchanges or [])))
 
+    return normalized_map_mmol, normalized_map_upper_bound, all_exchanges, supplement_to_rxn
+
+
+def get_supplement_exchange_dataframe(
+    growth_rates_df: pd.DataFrame,
+    mappings: tuple[dict[str, float], dict[str, float], list[str], dict[str, str]],
+    supplement_column: str = "supplements",
+    growth_rate_column: str = "mu_max",
+    success_column: str = "success",
+    baseline_exchanges: list[str] | None = None,
+    separator: str = ";",
+    exchange_suffix: str | None = None,
+) -> pd.DataFrame:
+    """
+    Create a binary matrix mapping supplements to exchange reactions.
+
+    This function takes a growth rates dataframe (output from fit_modified_gompertz_per_series)
+    and creates a matrix where:
+    - Each row corresponds to a row in the input dataframe
+    - Each column corresponds to an exchange reaction in the metabolic model
+    - Values are 1 if the metabolite is present in supplements, 0 otherwise
+    - The last column contains the growth rate
+
+    Parameters
+    ----------
+    growth_rates_df : pd.DataFrame
+        Output from fit_modified_gompertz_per_series containing growth rates and metadata
+    normalized_map : Dict[str, str]
+        Normalized mapping from supplement names (lowercase) to exchange reaction IDs.
+        Use _build_supplement_mappings() to generate this from raw mappings.
+    unique_supplements : Set[str]
+        Set of unique supplement names (lowercase) found in the dataframe.
+        Use _build_supplement_mappings() to extract this from the dataframe.
+    supplement_column : str
+        Name of the column containing supplement information (default: "supplements")
+    growth_rate_column : str
+        Name of the column containing growth rate values (default: "mu_max")
+    success_column : str
+        Name of the column containing success status (default: "success")
+    baseline_exchanges : Optional[List[str]]
+        List of exchange reactions that are always present (minimal media components).
+        These will be set to 1 for all rows.
+    separator : str
+        Character used to separate multiple supplements in the supplement column (default: ";")
+    exchange_suffix : Optional[str]
+        Optional suffix to append to all exchange reaction column names (default: None).
+        If provided, all exchange columns will have this suffix added, but the growth_rate_column
+        will remain unchanged. Example: exchange_suffix="_input" would rename "EX_glc__D_e"
+        to "EX_glc__D_e_input"
+
+    Returns
+    -------
+    pd.DataFrame
+        Matrix with exchange reactions as columns and growth rate as the last column
+
+    Notes
+    -----
+    - Supplement names are case-insensitive and whitespace is stripped
+    - If exact match fails, fuzzy matching is attempted with configurable threshold
+    - Unmapped supplements trigger a warning with details
+    - Baseline exchanges are always set to 1 for all rows
+    - Growth rate column name is preserved as specified in growth_rate_column parameter
+    """
+    _, _, all_exchanges, supplement_to_rxn = mappings
     # Build rows
     rows: list[dict[str, int | float | None]] = []
 
@@ -369,7 +364,7 @@ def get_supplement_exchange_dataframe(
 
 def get_supplement_flux_dataframe(
     growth_rates_df: pd.DataFrame,
-    mappings: tuple[dict[str, str], dict[str, str], set[str], dict[str, float]],
+    mappings: tuple[dict[str, float], dict[str, float], list[str], dict[str, str]],
     supplement_column: str = "supplements",
     growth_rate_column: str = "mu_max",
     success_column: str = "success",
@@ -379,7 +374,6 @@ def get_supplement_flux_dataframe(
     od600_conversion_rate: float = 4,
     baseline_exchanges: list[str] | None = None,
     separator: str = ";",
-    fuzzy_threshold: float = 0.6,
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
     """
@@ -411,8 +405,6 @@ def get_supplement_flux_dataframe(
         List of exchange reactions that are always present (minimal media components)
     separator : str
         Character used to separate multiple supplements (default: ";")
-    fuzzy_threshold : float
-        Threshold for fuzzy matching of supplement names (default: 0.6)
     exchange_suffix : Optional[str]
         Optional suffix to append to all exchange reaction column names
 
@@ -423,28 +415,7 @@ def get_supplement_flux_dataframe(
         and growth rate as the last column
 
     """
-    normalized_map, normalized_map_mmol, unique_supplements, normalized_map_upper_bound = mappings
-    # Map supplements -> exchange reaction ids using exact then fuzzy matching
-    supplement_to_rxn: dict[str, str] = {}
-    map_keys = list(normalized_map.keys())
-
-    for supp in sorted(unique_supplements):
-        if supp in normalized_map:
-            supplement_to_rxn[supp] = normalized_map[supp]
-            continue
-
-        # Fuzzy match
-        if map_keys:
-            matches = difflib.get_close_matches(supp, map_keys, n=1, cutoff=fuzzy_threshold)
-            if matches:
-                best = matches[0]
-                supplement_to_rxn[supp] = normalized_map[best]
-                continue
-
-    # Define all exchange columns
-    mapped_rxns = sorted(set(supplement_to_rxn.values()))
-    all_exchanges = sorted(set(mapped_rxns + (baseline_exchanges or [])))
-
+    normalized_map_mmol, normalized_map_upper_bound, all_exchanges, supplement_to_rxn = mappings
     # Build rows with mmol values
     rows_mmol: list[dict[str, float]] = []
 
@@ -604,7 +575,7 @@ def _parse_sbml_exchanges_fallback(sbml_path: str | Path) -> dict[str, str]:
 
 def create_exchange_bounds_template(
     exchange_matrix: pd.DataFrame,
-    mappings: tuple[dict[str, str], dict[str, str], set[str], dict[str, float]],
+    mappings: tuple[dict[str, float], dict[str, float], list[str], dict[str, str]],
     growth_rate_column: str = "mu_max",
     default_level: int = 1,
     default_max_value: int = 1000,
@@ -699,7 +670,7 @@ def create_exchange_bounds_template(
     You can modify these values based on your metabolic model requirements.
     Custom bounds take precedence over SBML bounds, which take precedence over defaults.
     """
-    _, _, _, normalized_map_upper_bound = mappings
+    _, normalized_map_upper_bound, _, _ = mappings
     # Get all exchange columns (exclude growth rate column)
     exchange_cols = [col for col in exchange_matrix.columns if col != growth_rate_column]
 

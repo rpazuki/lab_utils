@@ -78,7 +78,6 @@ pipelines:
                     supplement_column: supplements # The column name for OD values in output dataframe
                     growth_rate_column: mv_mu_max # The column name for OD values in output dataframe
                     success_column: success # The column name for success status in output dataframe
-                    verbose: true
                     exchange_suffix: _i
                     baseline_exchanges: #
                         - EX_pi_e
@@ -111,7 +110,6 @@ pipelines:
                         - EX_tungs_e
                         - EX_slnt_e
                     separator: ; #
-                    fuzzy_threshold: 0.6 # The column name for OD values in output dataframe
             #####################################
             # Create bounds template for exchange reactions
             - df_exchange_bounds: # output dataframe name
@@ -137,4 +135,4 @@ pipelines:
             - df_amn_dataset: df_amn_dataset.csv
             - df_exchange_bounds: df_amn_dataset_levels.csv
             - df_supplement_flux: df_supplement_flux.csv
-            - mapping_dicts: [normalized_map.json, normalized_map_mmol.json, unique_supplements.json, normalized_map_upper_bound.json]
+            - mapping_dicts: [normalized_map_mmol.json, normalized_map_upper_bound.json, all_exchanges.json, supplement_to_rxn.json]
