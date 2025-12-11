@@ -63,12 +63,28 @@ pipelines:
                 parameters:
                     growth_rates_df: growth_data # The 'growth_data' input defined above
                     mappings_df : mapping_df
+            - df_AMN_input:
+                package: labUtils.amn_mappings
+                method: build_AMN_inputs_dataframe
+                parameters:
+                    growth_rates_df: growth_data # The 'growth_data' input defined above
+                    mappings_df : mapping_df
+                    exchange_suffix: _i
+
+            - df_AMN_level:
+                package: labUtils.amn_mappings
+                method: build_AMN_levels_dataframe
+                parameters:
+                    exchange_matrix: df_AMN_input # The 'df_AMN_input' input defined above
+                    mappings_df : mapping_df
         Outputs:
             #####################################
             # List of output dataframes to save
             # to csv files
             - mapping_df: mappings.csv
             - df_flux: df_flux.csv
+            - df_AMN_input: df_AMN_input.csv
+            - df_AMN_level: df_AMN_level.csv
     ##################################################################################
     #
     - AMN_build_dataset_pipeline:

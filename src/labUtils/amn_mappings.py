@@ -315,6 +315,103 @@ def build_supplement_flux_dataframe(
     return result_df_mmol
 
 
+def build_AMN_inputs_dataframe(  # noqa: N802
+    growth_rates_df: pd.DataFrame,
+    mappings_df: pd.DataFrame,
+    supplement_column: str = "supplements",
+    growth_rate_column: str = "mu_max",
+    success_column: str = "success",
+    separator: str = ";",
+    exchange_suffix: str | None = None,
+) -> pd.DataFrame:
+    # Create a dictionary of all supplement that are either is_supplement or is_baseline
+    all_exchanges = mappings_df.loc[mappings_df["is_supplement"] | mappings_df["is_baseline"], "exchange_reaction"]
+    # Build rows
+    rows: list[dict[str, int | float | None]] = []
+    for _, row in growth_rates_df.iterrows():
+        # Skip rows where success column exists and is False
+        if success_column in growth_rates_df.columns and not row[success_column]:
+            continue
+
+        new_row: dict[str, int | float | None] = dict.fromkeys(all_exchanges, 0)
+        # parse supplements for this row
+        supps_val = row.get(supplement_column)
+        if pd.notna(supps_val):
+            for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
+                supplements = mappings_df.loc[mappings_df["supplement"] == part]
+                if supplements.empty:
+                    continue
+                rxn = supplements["exchange_reaction"].values[0]
+                # ensure column exists
+                # if rxn not in row:
+                #     row[rxn] = 0
+                new_row[rxn] = 1
+
+        # add growth rate as final column (preserve column name passed)
+        new_row[growth_rate_column] = row.get(growth_rate_column)
+
+        rows.append(new_row)
+
+    result_df = pd.DataFrame(rows)
+    # ensure baseline columns are present (even if empty)
+    baselines = mappings_df.loc[mappings_df["is_baseline"]]
+    for ex in baselines["exchange_reaction"]:
+        result_df[ex] = 1
+
+    # Reorder columns: exchanges sorted, then growth rate last
+    exch_cols = sorted([c for c in result_df.columns if c != growth_rate_column])
+
+    # Apply suffix to exchange columns if requested
+    if exchange_suffix:
+        rename_map = {col: f"{col}{exchange_suffix}" for col in exch_cols}
+        result_df = result_df.rename(columns=rename_map)
+        exch_cols = [f"{col}{exchange_suffix}" for col in exch_cols]
+
+    result_df = result_df[exch_cols + [growth_rate_column]]
+
+    return result_df
+
+
+def build_AMN_levels_dataframe(  # noqa: N802
+    exchange_matrix: pd.DataFrame,
+    mappings_df: pd.DataFrame,
+    growth_rate_column: str = "mu_max",
+    default_level: int = 1,
+    default_max_value: int = 1000,
+    sbml_bounds: dict[str, tuple[int, int]] | None = None,
+    custom_bounds: dict[str, tuple[int, int]] | None = None,
+) -> pd.DataFrame:
+    # Create a dictionary of all flux upper bound where supplement are either is_supplement or is_baseline
+    flux_upper_bounds = mappings_df.loc[mappings_df["is_supplement"] | mappings_df["is_baseline"], "flux_upper_bound"]
+
+    # Get all exchange columns (exclude growth rate column)
+    exchange_cols = [col for col in exchange_matrix.columns if col != growth_rate_column]
+
+    # Create the template dataframe
+    template_data: dict[str, list[str | float]] = {"name": ["level", "max_value", "ratio_drawing"]}
+
+    # Add columns for each exchange reaction with values
+    for col in exchange_cols:
+        # Precedence: custom_bounds > mappings_df.flux_upper_bound > sbml_bounds > defaults
+        if custom_bounds and col in custom_bounds:
+            # Highest priority: custom bounds
+            level_val, max_val = custom_bounds[col]
+            template_data[col] = [level_val, max_val, 0]
+        elif col in flux_upper_bounds and flux_upper_bounds.get(col, 0.0) > 0.0:
+            # Second priority: Use upper bound from normalized map if available
+            max_val = flux_upper_bounds.get(col, 0)
+            template_data[col] = [default_level, max_val, 0]
+        elif sbml_bounds and col in sbml_bounds:
+            # Third priority: SBML bounds
+            level_val, max_val = sbml_bounds[col]
+            template_data[col] = [level_val, max_val, 0]
+        else:
+            # Lowest priority: default values
+            template_data[col] = [default_level, default_max_value, 0]
+
+    return pd.DataFrame(template_data)
+
+
 def build_supplement_mappings(
     growth_rates_df: pd.DataFrame,
     supplement_to_exchange_map: dict[str, str],
