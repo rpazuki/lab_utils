@@ -1,4 +1,74 @@
 pipelines:
+    - AMN_build_dataset_pipeline_test:
+        Inputs:
+            #####################################
+            # grothwth measurment csv
+            - growth_data:
+                - src: EMPTY
+                - package:  labUtils.utils
+                - method: read_csv
+            # SBML model file
+            - model_sbml:
+                - src: EMPTY
+                - package:  labUtils.amn_mappings
+                - method: parse_sbml_exchanges
+             # SBML model file
+            - model_sbml_bounds:
+                - src: EMPTY
+                - package:  labUtils.amn_mappings
+                - method: parse_sbml_exchange_bounds
+        Processes:
+            - mapping_df:
+                package: labUtils.amn_mappings
+                method: build_mappings
+                is_cached: true
+                parameters:
+                    growth_rates_df: growth_data # The 'growth_data' input defined above
+                    supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
+                    supplement_column: supplements # The column name for OD values in output dataframe
+                    verbose: true
+                    baseline_exchanges: #
+                        - EX_pi_e
+                        - EX_co2_e #
+                        - EX_fe3_e
+                        - EX_h_e #
+                        - EX_pro__L_e
+                        - EX_glyc_e
+                        - EX_mn2_e
+                        - EX_ala__L_e
+                        - EX_fe2_e
+                        - EX_gal_e # !!!!!
+                        - EX_gly_e #
+                        - EX_zn2_e
+                        - EX_mg2_e
+                        - EX_ca2_e
+                        - EX_ni2_e
+                        - EX_cu2_e
+                        - EX_sel_e
+                        - EX_cobalt2_e
+                        - EX_h2o_e #
+                        - EX_mobd_e
+                        - EX_so4_e
+                        - EX_thr__L_e
+                        - EX_nh4_e #
+                        - EX_k_e #
+                        - EX_na1_e
+                        - EX_cl_e
+                        - EX_o2_e #
+                        - EX_tungs_e
+                        - EX_slnt_e
+            - df_flux:
+                package: labUtils.amn_mappings
+                method: build_supplement_flux_dataframe
+                parameters:
+                    growth_rates_df: growth_data # The 'growth_data' input defined above
+                    mappings_df : mapping_df
+        Outputs:
+            #####################################
+            # List of output dataframes to save
+            # to csv files
+            - mapping_df: mappings.csv
+            - df_flux: df_flux.csv
     ##################################################################################
     #
     - AMN_build_dataset_pipeline:
@@ -27,15 +97,6 @@ pipelines:
                     growth_rates_df: growth_data # The 'growth_data' input defined above
                     supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
                     supplement_column: supplements # The column name for OD values in output dataframe
-            - df_supplement_flux:
-                package: labUtils.amn_mappings
-                method: get_supplement_flux_dataframe
-                parameters:
-                    growth_rates_df: growth_data # The 'growth_data' input defined above
-                    mappings: mapping_dicts
-                    supplement_column: supplements # The column name for OD values in output dataframe
-                    growth_rate_column: mv_mu_max # The column name for OD values in output dataframe
-                    success_column: success # The column name for success status in output dataframe
                     baseline_exchanges: #
                         - EX_pi_e
                         - EX_co2_e #
@@ -66,6 +127,16 @@ pipelines:
                         - EX_o2_e #
                         - EX_tungs_e
                         - EX_slnt_e
+            - df_supplement_flux:
+                package: labUtils.amn_mappings
+                method: get_supplement_flux_dataframe
+                parameters:
+                    growth_rates_df: growth_data # The 'growth_data' input defined above
+                    mappings: mapping_dicts
+                    supplement_column: supplements # The column name for OD values in output dataframe
+                    growth_rate_column: mv_mu_max # The column name for OD values in output dataframe
+                    success_column: success # The column name for success status in output dataframe
+
             #####################################
             # Parse raw data and metadata into
             # a tidy dataframe
@@ -79,36 +150,6 @@ pipelines:
                     growth_rate_column: mv_mu_max # The column name for OD values in output dataframe
                     success_column: success # The column name for success status in output dataframe
                     exchange_suffix: _i
-                    baseline_exchanges: #
-                        - EX_pi_e
-                        - EX_co2_e #
-                        - EX_fe3_e
-                        - EX_h_e #
-                        - EX_pro__L_e
-                        - EX_glyc_e
-                        - EX_mn2_e
-                        - EX_ala__L_e
-                        - EX_fe2_e
-                        - EX_gal_e # !!!!!
-                        - EX_gly_e #
-                        - EX_zn2_e
-                        - EX_mg2_e
-                        - EX_ca2_e
-                        - EX_ni2_e
-                        - EX_cu2_e
-                        - EX_sel_e
-                        - EX_cobalt2_e
-                        - EX_h2o_e #
-                        - EX_mobd_e
-                        - EX_so4_e
-                        - EX_thr__L_e
-                        - EX_nh4_e #
-                        - EX_k_e #
-                        - EX_na1_e
-                        - EX_cl_e
-                        - EX_o2_e #
-                        - EX_tungs_e
-                        - EX_slnt_e
                     separator: ; #
             #####################################
             # Create bounds template for exchange reactions

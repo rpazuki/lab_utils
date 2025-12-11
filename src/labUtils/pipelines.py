@@ -27,6 +27,11 @@ _Self = TypeVar("_Self", bound="AbstractPipeline")
 log = logging.getLogger(__name__)
 
 
+# cache
+
+cache = {}
+
+
 class Dict(DefaultDict):
     def __missing__(self, key) -> None:
         # raise KeyError(key)
@@ -433,7 +438,7 @@ class ProcessFactory:
 
 
 class InputProcess(Process):
-    def __call__(self, *, name: str, src: str, package: str, method: str, **kwargs) -> Dict:
+    def __call__(self, *, name: str, src: str, package: str, method: str, is_cached: bool = False, **kwargs) -> Dict:
         """Input process to load data from different sources.
 
         Parameters
@@ -446,10 +451,21 @@ class InputProcess(Process):
             The package name to use for loading the data.
         method : str
             The method name within the package to use for loading the data.
+        is_cached : bool, optional
+            Whether to cache the loaded data, by default False.
         """
         pkg = importlib.import_module(package)
         func = getattr(pkg, method)
-        data = func(Path(src), **kwargs)
+        if is_cached:
+            # create a cache key based on function name and arguments
+            cache_key = (package, method, src)
+            if cache_key in cache:
+                data = cache[cache_key]
+            else:
+                data = func(Path(src), **kwargs)
+                cache[cache_key] = data
+        else:
+            data = func(Path(src), **kwargs)
         return Dict({f"{name}": data})
 
 
@@ -463,6 +479,7 @@ class DFProcess(Process):
         method: str,
         parameters: dict,
         output_dir: str | Path | None = None,
+        is_cached: bool = False,
         **kwargs,
     ) -> Dict:
         """DataFrame process to save data to different destinations.
@@ -478,6 +495,7 @@ class DFProcess(Process):
         method : str
             The method name within the package to use for saving the DataFrame.
         parameters:dict
+        is_cached: bool = False, optional
 
         """
 
@@ -506,7 +524,17 @@ class DFProcess(Process):
             #         f"of package '{package}' because it does not accept such argument."
             #     )
 
-        data = func(**arguments)
+        if is_cached:
+            # create a cache key based on function name and arguments
+            cache_key = (package, method, name)
+            if cache_key in cache:
+                data = cache[cache_key]
+            else:
+                data = func(**arguments)
+                cache[cache_key] = data
+        else:
+            data = func(**arguments)
+
         return Dict({**{f"{name}": data}, **payload})
 
 
@@ -680,6 +708,8 @@ def build_pipeline_from_yaml_string(
                 raise ValueError(f"Input '{input_name}' must have 'package' field")
             if "method" not in input_params:
                 raise ValueError(f"Input '{input_name}' must have 'method' field")
+            if "is_cached" not in input_params:
+                input_params["is_cached"] = False
 
             # Create a ProcessLogic wrapper for InputProcess
             def make_input_process(name, params):
@@ -690,7 +720,8 @@ def build_pipeline_from_yaml_string(
                         src=params["src"],
                         package=params["package"],
                         method=params["method"],
-                        **{k: v for k, v in params.items() if k not in ["src", "package", "method"]},
+                        is_cached=params["is_cached"],
+                        **{k: v for k, v in params.items() if k not in ["src", "package", "method", "is_cached"]},
                     )
 
                 return input_logic
@@ -725,6 +756,7 @@ def build_pipeline_from_yaml_string(
                         package=spec["package"],
                         method=spec["method"],
                         parameters=spec["parameters"],
+                        is_cached=spec.get("is_cached", False),
                         output_dir=output_dir,
                     )
 

@@ -7,7 +7,9 @@ custom_mapping:
     #     mass_per_litre: 0.0,
     #     pubchem_name: None,
     #     pubchem_id: None,
-    #     default_upper_bound: 0.0,
+    #     flux_upper_bound: 0.0,
+    #     is_baseline: false,
+    #     is_supplement: false, # It is read from metadata, but can be overridden here
     #
     # }
     # The mass_per_litre (in g/L unit) is used as the default concentration (0.0 means use model default)
@@ -171,19 +173,19 @@ custom_mapping:
     phosphate:  # Phosphate
         exchange_name: EX_pi_e
         mass_per_litre: 9.78
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     sulfate:  # Sulfate (from CuSO4·5H2O) # VEIRFY
         exchange_name: EX_so4_e
         mass_per_litre: 0.019
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     ammonia:  # Ammonia (nitrogen source)
         exchange_name: EX_nh4_e
         mass_per_litre: 1.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     chloride:  # Chloride
         exchange_name: EX_cl_e
         mass_per_litre: 0.5
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     edta:  # EDTA (Ethylenediaminetetraacetic acid)
         exchange_name: EX_edta_e
         mass_per_litre: 5.0
@@ -204,12 +206,12 @@ custom_mapping:
     nacl:  # Sodium chloride (NaCl) # VEIRFY
         exchange_name: EX_cl_e
         mass_per_litre: 0.5
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     nh4cl:  # Ammonium chloride (NH₄Cl) # VEIRFY
         exchange_name: EX_nh4_e
         mass_per_litre: 1.0
         pubchem_id: 25517
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     fecl3_6h2o:  # Ferric chloride hexahydrate (FeCl3·6H2O) # VEIRFY
         exchange_name: EX_fe3_e
         mass_per_litre: 0.83
@@ -233,92 +235,92 @@ custom_mapping:
     potassium:  # Potassium (K+)
         exchange_name: EX_k_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     sodium:  # Sodium (Na+)
         exchange_name: EX_na1_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     magnesium:  # Magnesium (Mg2+)
         exchange_name: EX_mg2_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     calcium:  # Calcium (Ca2+)
         exchange_name: EX_ca2_e
         mass_per_litre: 4.8
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
 
     # Trace metals (iron)
     iron_fe2:  # Iron (Fe2+, ferrous) # VEIRFY
         exchange_name: EX_fe2_e
         mass_per_litre: 0.0
         pubchem_name: ferrous-cation
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     iron_fe3:  # Iron (Fe3+, ferric) (from FeCl3·6H2O) # VEIRFY
         exchange_name: EX_fe3_e
         mass_per_litre: 0.83
         pubchem_name: ferric-cation
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     # Trace metals (other)
     manganese:  # Manganese (Mn2+) (from MnCl2·4H2O) # VEIRFY
         exchange_name: EX_mn2_e
         mass_per_litre: 0.0016
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     zinc:  # Zinc (Zn2+) (from ZnCl2) # VEIRFY
         exchange_name: EX_zn2_e
         mass_per_litre: 0.084
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     copper:  # Copper (Cu2+) (from CuSO4·5H2O) # VEIRFY
         exchange_name: EX_cu2_e
         mass_per_litre: 0.019
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     nickel:  # Nickel (Ni2+)
         exchange_name: EX_ni2_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     cobalt:  # Cobalt (Co2+) (from CoCl2·6H2O) # VEIRFY
         exchange_name: EX_cobalt2_e
         mass_per_litre: 0.01
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
 
     # Trace elements (non-metals)
     molybdate:  # Molybdate (molybdenum source)
         exchange_name: EX_mobd_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     tungstate:  # Tungstate (tungsten source)
         exchange_name: EX_tungs_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     selenate:  # Selenate (selenium source)
         exchange_name: EX_sel_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     selenite:  # Selenite (selenium source)
         exchange_name: EX_slnt_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
 
     # Gases
     oxygen:  # Oxygen (O2)
         exchange_name: EX_o2_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     carbon_dioxide:  # Carbon dioxide (CO2)
         exchange_name: EX_co2_e
         mass_per_litre: 0.0
         pubchem_name: carbon-dioxide
         pubchem_id: 280
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
 
     # Other inorganics
     water:  # Water (H2O)
         exchange_name: EX_h2o_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
     proton:  # Proton (H+)
         exchange_name: EX_h_e
         mass_per_litre: 0.0
-        default_upper_bound: 2.2
+        flux_upper_bound: 2.2
 
     # Carbon sources (baseline)
     glycerol:  # Glycerol
