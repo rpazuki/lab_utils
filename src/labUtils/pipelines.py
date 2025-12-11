@@ -8,6 +8,7 @@
 import importlib
 import inspect
 import logging
+import os
 
 # import warnings
 from abc import ABC, abstractmethod
@@ -530,6 +531,27 @@ class OutputProcess(Process):
                 for i, output_spec in enumerate(output_path):
                     if isinstance(payload_item[i], DataFrame):
                         payload_item[i].to_csv(output_spec)
+                        continue
+
+                    if isinstance(payload_item, tuple):
+                        inner_item = payload_item[i]
+                        if isinstance(inner_item, DataFrame):
+                            inner_item.to_csv(output_spec)
+                        else:
+                            import json
+
+                            class SetEncoder(json.JSONEncoder):
+                                def default(self, obj):
+                                    if isinstance(obj, set):
+                                        return list(obj)
+                                    return super().default(obj)
+
+                            # remove the file if exists
+                            if os.path.exists(output_spec):
+                                os.remove(output_spec)
+                            with open(output_spec, "w") as file:
+                                json.dump(inner_item, file, indent=4, cls=SetEncoder)
+
                         continue
 
                     raise IncompatibleArgsException(

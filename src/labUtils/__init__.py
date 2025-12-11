@@ -1,14 +1,19 @@
-from .amn_mappings import (_parse_sbml_exchanges_fallback,
-                           create_exchange_bounds_template,
-                           create_supplement_exchange_matrix,
-                           get_supplement_mapping,
-                           load_default_iml1515_mapping,
-                           load_minimal_media_exchanges,
-                           parse_sbml_exchange_bounds, parse_sbml_exchanges)
+from .amn_mappings import (
+    _parse_sbml_exchanges_fallback,
+    build_supplement_mappings,
+    create_exchange_bounds_template,
+    get_supplement_exchange_dataframe,
+    get_supplement_mmol_dataframe,
+    load_default_iml1515_mapping,
+    load_minimal_media_exchanges,
+    parse_sbml_exchange_bounds,
+    parse_sbml_exchanges,
+)
 
 __all__ = [
-    "create_supplement_exchange_matrix",
-    "get_supplement_mapping",
+    "build_supplement_mappings",
+    "get_supplement_exchange_dataframe",
+    "get_supplement_mmol_dataframe",
     "parse_sbml_exchanges",
     "_parse_sbml_exchanges_fallback",
     "parse_sbml_exchange_bounds",

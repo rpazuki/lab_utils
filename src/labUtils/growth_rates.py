@@ -34,10 +34,12 @@ def transform_to_log_n_n0(
     transformed_col: str = "log_n_n0",
     group_cols: list[str] = ["well"],
     OD_0_averaging_window: int = 1,  # number of initial points to average for OD_0
+    OD_0_col: str = "n0",
 ) -> pd.DataFrame:
     """Transforms the value_col to log(n/n0) per group defined by group_cols."""
     df_transformed = df.copy()
     df_transformed[transformed_col] = np.nan  # Initialize the new column with NaNs
+    df_transformed[OD_0_col] = np.nan  # Initialize the new column with NaNs
     for keys, g in df_transformed.groupby(group_cols, sort=False):
         keys = (keys,) if not isinstance(keys, tuple) else keys
         y = g[value_col].to_numpy(dtype=float)
@@ -50,6 +52,7 @@ def transform_to_log_n_n0(
         with np.errstate(divide="ignore", invalid="ignore"):
             log_n_n0 = np.where(n0 > 0, np.log(n / n0), np.nan)
         df_transformed.loc[g.index[m], transformed_col] = log_n_n0
+        df_transformed.loc[g.index[m], OD_0_col] = n0
 
     return df_transformed
 
@@ -63,6 +66,8 @@ def fit_max_growth_rate_per_series(
     moving_window_size: int = 5,
     smoothing_iterations: int = 0,
     smooth_window_size: int = 2,
+    value_is_log_transformed: bool = True,
+    OD_0_col: str = "n0",
 ) -> pd.DataFrame:
     """
     Finds the maximum growth rate for each series in `df` and returns the fit parameters.
@@ -84,6 +89,8 @@ def fit_max_growth_rate_per_series(
         Each iteration applies a simple moving average with window size smooth_window_size.
     smooth_window_size: int (default: 2)
         Window size for the moving average smoothing.
+    value_is_log_transformed: bool (default: True)
+        Whether the input values are already log-transformed.
 
     Returns
     -------
@@ -132,8 +139,9 @@ def fit_max_growth_rate_per_series(
         """Unified fitting function that handles any combination of fixed parameters."""
         t = gdf[time_col].to_numpy(dtype=float)
         y = gdf[value_col].to_numpy(dtype=float)
-        m = np.isfinite(t) & np.isfinite(y)
-        t, y = t[m], y[m]
+        n0s = gdf[OD_0_col].to_numpy(dtype=float)
+        m = np.isfinite(t) & np.isfinite(y) & np.isfinite(n0s)
+        t, y, n0s = t[m], y[m], n0s[m]
 
         # Apply smoothing if requested (only to y, not t)
         for _ in range(smoothing_iterations):
@@ -158,6 +166,12 @@ def fit_max_growth_rate_per_series(
             return out
 
         try:
+            max_value_index = np.nanargmax(y)
+            max_value = y[max_value_index]
+            if value_is_log_transformed:
+                max_value = np.exp(max_value) * n0s[max_value_index]  # convert back to normal scale
+            max_time = t[max_value_index]
+            # Create moving windows
             t_moving_windows = [t[i : i + moving_window_size] for i in range(len(t) - moving_window_size + 1)]
             y_moving_windows = [y[i : i + moving_window_size] for i in range(len(y) - moving_window_size + 1)]
 
@@ -209,6 +223,8 @@ def fit_max_growth_rate_per_series(
                     "mv_mu_max": max_growth_rate,
                     "mv_r2": max_r2,  # r²
                     "mv_rmse": rmse,  # RMSE
+                    "max_value": max_value,
+                    "max_time": max_time,
                 }
             )
         except (RuntimeError, ValueError, np.linalg.LinAlgError) as ex:  # Added LinAlgError
@@ -253,6 +269,8 @@ def fit_modified_gompertz_per_series(
     clip_exp: float = 50.0,  # numerical safety against overflow in exp(exp(.))
     min_points: int = 5,  # require at least this many points to fit
     fixed_params: dict[str, float] | None = None,
+    value_is_log_transformed: bool = True,
+    OD_0_col: str = "n0",
 ) -> pd.DataFrame:
     """
     Fits the modified Gompertz model to each series in `df` and returns the fit parameters.
@@ -276,6 +294,8 @@ def fit_modified_gompertz_per_series(
         Valid keys: 'y0', 'A', 'mu_max', 'lambda'
         Example: {'y0': 0.0, 'lambda': 2.0} fixes y0 to 0 and lambda to 2,
         while A and mu_max are fitted.
+    value_is_log_transformed: bool (default: True)
+        Whether the input values are already log-transformed.
 
     Returns
     -------
@@ -304,8 +324,9 @@ def fit_modified_gompertz_per_series(
         """Unified fitting function that handles any combination of fixed parameters."""
         t = gdf[time_col].to_numpy(dtype=float)
         y = gdf[value_col].to_numpy(dtype=float)
-        m = np.isfinite(t) & np.isfinite(y)
-        t, y = t[m], y[m]
+        n0s = gdf[OD_0_col].to_numpy(dtype=float)
+        m = np.isfinite(t) & np.isfinite(y) & np.isfinite(n0s)
+        t, y, n0s = t[m], y[m], n0s[m]
         out: dict[str, Any] = {"n": int(len(y))}
 
         # np.exp(0.1) is used as the upper limit, by assuming the data are log(n/n0) transformed
@@ -339,6 +360,12 @@ def fit_modified_gompertz_per_series(
             "mu_max": 10.0,
             "lambda": float(np.nanmax(t)) * 1.5 + 1,
         }
+
+        # Clamp guesses to be within bounds to avoid "Initial guess outside bounds" error
+        all_guesses["y0"] = np.clip(all_guesses["y0"], all_lower_bounds["y0"], all_upper_bounds["y0"])
+        all_guesses["A"] = np.clip(all_guesses["A"], all_lower_bounds["A"], all_upper_bounds["A"])
+        all_guesses["mu_max"] = np.clip(all_guesses["mu_max"], all_lower_bounds["mu_max"], all_upper_bounds["mu_max"])
+        all_guesses["lambda"] = np.clip(all_guesses["lambda"], all_lower_bounds["lambda"], all_upper_bounds["lambda"])
 
         p0 = [all_guesses[p] for p in free_param_names]
         lb = [all_lower_bounds[p] for p in free_param_names]
@@ -380,6 +407,13 @@ def fit_modified_gompertz_per_series(
             r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
             rmse = float(np.sqrt(ss_res / max(1, len(y) - len(popt))))
 
+            #
+            max_value_index = np.nanargmax(y)
+            max_value = y[max_value_index]
+            if value_is_log_transformed:
+                max_value = np.exp(max_value) * n0s[max_value_index]  # convert back to normal scale
+            max_time = t[max_value_index]
+
             out.update(
                 {
                     "success": True,
@@ -390,6 +424,8 @@ def fit_modified_gompertz_per_series(
                     "lambda": fitted_params["lambda"],
                     "r2": r2,
                     "rmse": rmse,
+                    "max_value": max_value,
+                    "max_time": max_time,
                 }
             )
 

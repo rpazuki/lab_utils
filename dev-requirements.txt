@@ -7,4 +7,5 @@ pytest
 pylint
 addict
 pyyaml
+pubchempy
 -e ./src

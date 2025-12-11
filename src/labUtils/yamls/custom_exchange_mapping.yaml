@@ -2,94 +2,328 @@ custom_mapping:
     # ============================================================================
     # SUPPLEMENT EXCHANGES - Added compounds for growth experiments
     # ============================================================================
+    # Format:
+    # {   exchange_name: reaction_id,
+    #     mass_per_litre: 0.0,
+    #     pubchem_name: None,
+    #     pubchem_id: None,
+    #     default_upper_bound: 0.0,
+    #
+    # }
+    # The mass_per_litre (in g/L unit) is used as the default concentration (0.0 means use model default)
 
     # Other non-amino acids
-    succinate: EX_succ_e #
+    succinate:
+        exchange_name: EX_succ_e
+        mass_per_litre: 4.0
 
     # Sugars and carbon sources
-    glucose: EX_glc__D_e  # D-Glucose
-    sucrose: EX_sucr_e  #
+    glucose:  # D-Glucose
+        exchange_name: EX_glc__D_e
+        mass_per_litre: 4.0
+    sucrose:
+        exchange_name: EX_sucr_e
+        mass_per_litre: 4.0
 
     # Nucleobases (DNA/RNA bases)
-    adenine: EX_ade_e  # Adenine (DNA/RNA base)
-    guanine: EX_gua_e  # Guanine (DNA/RNA base)
-    cytosine: EX_csn_e  # Cytosine (DNA/RNA base)
-    thymine: EX_thym_e  # Thymine (DNA base)
-    uracil: EX_ura_e  # Uracil (RNA base)
+    adenine:  # Adenine (DNA/RNA base)
+        exchange_name: EX_ade_e
+        mass_per_litre: 36.8
+    guanine:  # Guanine (DNA/RNA base)
+        exchange_name: EX_gua_e
+        mass_per_litre: 37.5
+    cytosine:  # Cytosine (DNA/RNA base)
+        exchange_name: EX_csn_e
+        mass_per_litre: 22.2
+    thymine:  # Thymine (DNA base)
+        exchange_name: EX_thym_e
+        mass_per_litre: 0.0
+    uracil:  # Uracil (RNA base)
+        exchange_name: EX_ura_e
+        mass_per_litre: 22.4
+
+    # Vitamins and cofactors
+    thiamine:  # Thiamine (Vitamin B1)
+        exchange_name: EX_thm_e
+        mass_per_litre: 3.4
+    para_amino_benzoic_acid:  # para-Amino Benzoic Acid (PABA)
+        exchange_name: EX_4abz_e
+        mass_per_litre: 4.1
+        pubchem_id: 978 # Aminobenzoic-Acid
 
     # Uracil concentration variants
-    uracil_0.5: EX_ura_e
-    uracil_2: EX_ura_e
-    uracil_8: EX_ura_e
-    uracil_22.4: EX_ura_e
-    uracil_64: EX_ura_e
-    uracil_200: EX_ura_e
-    uracil_640: EX_ura_e
+    uracil_0.5:
+        exchange_name: EX_ura_e
+        mass_per_litre: 0.0
+        pubchem_name: uracil
+    uracil_2:
+        exchange_name: EX_ura_e
+        mass_per_litre: 0.0
+        pubchem_name: uracil
+    uracil_8:
+        exchange_name: EX_ura_e
+        mass_per_litre: 0.0
+        pubchem_name: uracil
+    uracil_22.4:
+        exchange_name: EX_ura_e
+        mass_per_litre: 0.0
+        pubchem_name: uracil
+    uracil_64:
+        exchange_name: EX_ura_e
+        mass_per_litre: 0.0
+        pubchem_name: uracil
+    uracil_200:
+        exchange_name: EX_ura_e
+        mass_per_litre: 0.0
+        pubchem_name: uracil
+    uracil_640:
+        exchange_name: EX_ura_e
+        mass_per_litre: 0.0
+        pubchem_name: uracil
 
     # Standard amino acids (20) - alphabetical order
-    ala: EX_ala__L_e  # Alanine -
-    arg: EX_arg__L_e  # Arginine
-    asn: EX_asn__L_e  # Asparagine
-    asp: EX_asp__L_e  # Aspartate (Aspartic acid)
-    cys: EX_cys__L_e  # Cysteine
-    gln: EX_gln__L_e  # Glutamine
-    glu: EX_glu__L_e  # Glutamate (Glutamic acid)
-    gly: EX_gly_e  # Glycine (Note: no __L suffix) -
-    his: EX_his__L_e  # Histidine
-    ile: EX_ile__L_e  # Isoleucine
-    leu: EX_leu__L_e  # Leucine
-    lys: EX_lys__L_e  # Lysine
-    met: EX_met__L_e  # Methionine
-    phe: EX_phe__L_e  # Phenylalanine
-    pro: EX_pro__L_e  # Proline -
-    ser: EX_ser__L_e  # Serine
-    thr: EX_thr__L_e  # Threonine -
-    trp: EX_trp__L_e  # Tryptophan
-    tyr: EX_tyr__L_e  # Tyrosine
-    val: EX_val__L_e  # Valine
+    ala:  # Alanine
+        exchange_name: EX_ala__L_e
+        mass_per_litre: 71.3
+        pubchem_name: alanine
+    arg:  # Arginine
+        exchange_name: EX_arg__L_e
+        mass_per_litre: 905.8
+        pubchem_name: arginine
+    asn:  # Asparagine
+        exchange_name: EX_asn__L_e
+        mass_per_litre: 52.8
+        pubchem_name: asparagine
+    asp:  # Aspartate (Aspartic acid)
+        exchange_name: EX_asp__L_e
+        mass_per_litre: 53.2
+        pubchem_name: aspartic-acid
+    cys:  # Cysteine
+        exchange_name: EX_cys__L_e
+        mass_per_litre: 17.6
+        pubchem_name: cysteine
+    gln:  # Glutamine
+        exchange_name: EX_gln__L_e
+        mass_per_litre: 87.7
+        pubchem_name: glutamine
+    glu:  # Glutamate (Glutamic acid)
+        exchange_name: EX_glu__L_e
+        mass_per_litre: 97.1
+        pubchem_name: glutamate
+    gly:  # Glycine (Note: no __L suffix)
+        exchange_name: EX_gly_e
+        mass_per_litre: 60.1
+        pubchem_name: glycine
+    his:  # Histidine
+        exchange_name: EX_his__L_e
+        mass_per_litre: 38.3
+        pubchem_name: histidine
+    ile:  # Isoleucine
+        exchange_name: EX_ile__L_e
+        mass_per_litre: 52.5
+        pubchem_name: isoleucine
+    leu:  # Leucine
+        exchange_name: EX_leu__L_e
+        mass_per_litre: 105.0
+        pubchem_name: leucine
+    lys:  # Lysine
+        exchange_name: EX_lys__L_e
+        mass_per_litre: 73.1
+        pubchem_name: lysine
+    met:  # Methionine
+        exchange_name: EX_met__L_e
+        mass_per_litre: 29.8
+        pubchem_name: methionine
+    phe:  # Phenylalanine
+        exchange_name: EX_phe__L_e
+        mass_per_litre: 66.1
+        pubchem_name: phenylalanine
+    pro:  # Proline
+        exchange_name: EX_pro__L_e
+        mass_per_litre: 46.0
+        pubchem_name: proline
+    ser:  # Serine
+        exchange_name: EX_ser__L_e
+        mass_per_litre: 1051.0
+        pubchem_name: serine
+    thr:  # Threonine
+        exchange_name: EX_thr__L_e
+        mass_per_litre: 47.6
+        pubchem_name: threonine
+    trp:  # Tryptophan
+        exchange_name: EX_trp__L_e
+        mass_per_litre: 20.4
+        pubchem_name: tryptophan
+    tyr:  # Tyrosine
+        exchange_name: EX_tyr__L_e
+        mass_per_litre: 36.2
+        pubchem_name: tyrosine
+    val:  # Valine
+        exchange_name: EX_val__L_e
+        mass_per_litre: 70.3
+        pubchem_name: valine
 
     # ============================================================================
     # BASELINE EXCHANGES - Media components (salts, ions, gases, etc.)
     # ============================================================================
 
     # Inorganic ions and minerals
-    phosphate: EX_pi_e  # Phosphate -
-    sulfate: EX_so4_e  # Sulfate -
-    ammonia: EX_nh4_e  # Ammonia (nitrogen source) -
-    chloride: EX_cl_e  # Chloride -
+    phosphate:  # Phosphate
+        exchange_name: EX_pi_e
+        mass_per_litre: 9.78
+        default_upper_bound: 2.2
+    sulfate:  # Sulfate (from CuSO4·5H2O) # VEIRFY
+        exchange_name: EX_so4_e
+        mass_per_litre: 0.019
+        default_upper_bound: 2.2
+    ammonia:  # Ammonia (nitrogen source)
+        exchange_name: EX_nh4_e
+        mass_per_litre: 1.0
+        default_upper_bound: 2.2
+    chloride:  # Chloride
+        exchange_name: EX_cl_e
+        mass_per_litre: 0.5
+        default_upper_bound: 2.2
+    edta:  # EDTA (Ethylenediaminetetraacetic acid)
+        exchange_name: EX_edta_e
+        mass_per_litre: 5.0
+        pubchem_id: 6049 # Ethylenediaminetetraacetic-acid
+    borate:  # Borate (H3BO3, Boric acid)
+        exchange_name: EX_h3bo3_e
+        mass_per_litre: 0.01
+
+    # Specific salt forms
+    na2hpo4:  # Disodium phosphate (Na₂HPO₄)  # VEIRFY
+        exchange_name: EX_pi_e
+        mass_per_litre: 6.78
+        pubchem_id: 24203 # Sodium Phosphate, Dibasic
+    kh2po4:  # Monopotassium phosphate (KH₂PO₄) # VEIRFY
+        exchange_name: EX_pi_e
+        mass_per_litre: 3.0
+        pubchem_id: 516951 # Monobasic potassium phosphate
+    nacl:  # Sodium chloride (NaCl) # VEIRFY
+        exchange_name: EX_cl_e
+        mass_per_litre: 0.5
+        default_upper_bound: 2.2
+    nh4cl:  # Ammonium chloride (NH₄Cl) # VEIRFY
+        exchange_name: EX_nh4_e
+        mass_per_litre: 1.0
+        pubchem_id: 25517
+        default_upper_bound: 2.2
+    fecl3_6h2o:  # Ferric chloride hexahydrate (FeCl3·6H2O) # VEIRFY
+        exchange_name: EX_fe3_e
+        mass_per_litre: 0.83
+    zncl2:  # Zinc chloride (ZnCl2) # VEIRFY
+        exchange_name: EX_zn2_e
+        mass_per_litre: 0.084
+    cuso4_5h2o:  # Copper sulfate pentahydrate (CuSO4·5H2O) # VEIRFY
+        exchange_name: EX_cu2_e
+        mass_per_litre: 0.019
+    cocl2_6h2o:  # Cobalt chloride hexahydrate (CoCl2·6H2O) # VEIRFY
+        exchange_name: EX_cobalt2_e
+        mass_per_litre: 0.01
+    mncl2_4h2o:  # Manganese chloride tetrahydrate (MnCl2·4H2O) # VEIRFY
+        exchange_name: EX_mn2_e
+        mass_per_litre: 0.0016
+    h3bo3:  # Boric acid (H3BO3) # VEIRFY
+        exchange_name: EX_h3bo3_e
+        mass_per_litre: 0.01
 
     # Major cations
-    potassium: EX_k_e  # Potassium (K+) -
-    sodium: EX_na1_e  # Sodium (Na+) -
-    magnesium: EX_mg2_e  # Magnesium (Mg2+) -
-    calcium: EX_ca2_e  # Calcium (Ca2+) -
+    potassium:  # Potassium (K+)
+        exchange_name: EX_k_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    sodium:  # Sodium (Na+)
+        exchange_name: EX_na1_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    magnesium:  # Magnesium (Mg2+)
+        exchange_name: EX_mg2_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    calcium:  # Calcium (Ca2+)
+        exchange_name: EX_ca2_e
+        mass_per_litre: 4.8
+        default_upper_bound: 2.2
 
     # Trace metals (iron)
-    iron_fe2: EX_fe2_e  # Iron (Fe2+, ferrous) -
-    iron_fe3: EX_fe3_e  # Iron (Fe3+, ferric) -
-
+    iron_fe2:  # Iron (Fe2+, ferrous) # VEIRFY
+        exchange_name: EX_fe2_e
+        mass_per_litre: 0.0
+        pubchem_name: ferrous-cation
+        default_upper_bound: 2.2
+    iron_fe3:  # Iron (Fe3+, ferric) (from FeCl3·6H2O) # VEIRFY
+        exchange_name: EX_fe3_e
+        mass_per_litre: 0.83
+        pubchem_name: ferric-cation
+        default_upper_bound: 2.2
     # Trace metals (other)
-    manganese: EX_mn2_e  # Manganese (Mn2+) -
-    zinc: EX_zn2_e  # Zinc (Zn2+) -
-    copper: EX_cu2_e  # Copper (Cu2+) -
-    nickel: EX_ni2_e  # Nickel (Ni2+) -
-    cobalt: EX_cobalt2_e  # Cobalt (Co2+) -
+    manganese:  # Manganese (Mn2+) (from MnCl2·4H2O) # VEIRFY
+        exchange_name: EX_mn2_e
+        mass_per_litre: 0.0016
+        default_upper_bound: 2.2
+    zinc:  # Zinc (Zn2+) (from ZnCl2) # VEIRFY
+        exchange_name: EX_zn2_e
+        mass_per_litre: 0.084
+        default_upper_bound: 2.2
+    copper:  # Copper (Cu2+) (from CuSO4·5H2O) # VEIRFY
+        exchange_name: EX_cu2_e
+        mass_per_litre: 0.019
+        default_upper_bound: 2.2
+    nickel:  # Nickel (Ni2+)
+        exchange_name: EX_ni2_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    cobalt:  # Cobalt (Co2+) (from CoCl2·6H2O) # VEIRFY
+        exchange_name: EX_cobalt2_e
+        mass_per_litre: 0.01
+        default_upper_bound: 2.2
 
     # Trace elements (non-metals)
-    molybdate: EX_mobd_e  # Molybdate (molybdenum source) -
-    tungstate: EX_tungs_e  # Tungstate (tungsten source) -
-    selenate: EX_sel_e  # Selenate (selenium source) -
-    selenite: EX_slnt_e  # Selenite (selenium source) -
+    molybdate:  # Molybdate (molybdenum source)
+        exchange_name: EX_mobd_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    tungstate:  # Tungstate (tungsten source)
+        exchange_name: EX_tungs_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    selenate:  # Selenate (selenium source)
+        exchange_name: EX_sel_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    selenite:  # Selenite (selenium source)
+        exchange_name: EX_slnt_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
 
     # Gases
-    oxygen: EX_o2_e  # Oxygen (O2) -
-    carbon_dioxide: EX_co2_e  # Carbon dioxide (CO2) -
+    oxygen:  # Oxygen (O2)
+        exchange_name: EX_o2_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    carbon_dioxide:  # Carbon dioxide (CO2)
+        exchange_name: EX_co2_e
+        mass_per_litre: 0.0
+        pubchem_name: carbon-dioxide
+        pubchem_id: 280
+        default_upper_bound: 2.2
 
     # Other inorganics
-    water: EX_h2o_e  # Water (H2O) -
-    proton: EX_h_e  # Proton (H+) -
+    water:  # Water (H2O)
+        exchange_name: EX_h2o_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
+    proton:  # Proton (H+)
+        exchange_name: EX_h_e
+        mass_per_litre: 0.0
+        default_upper_bound: 2.2
 
     # Carbon sources (baseline)
-    glycerol: EX_glyc_e  # Glycerol -
-    galactose: EX_gal_e  # D-Galactose
-
+    glycerol:  # Glycerol
+        exchange_name: EX_glyc_e
+        mass_per_litre: 0.0
+    galactose:  # D-Galactose
+        exchange_name: EX_gal_e
+        mass_per_litre: 0.0

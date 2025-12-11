@@ -308,13 +308,73 @@ def smart_join(
     return merged
 
 
+def smart_join_drop_right(
+    left_df: pd.DataFrame,
+    right_df: pd.DataFrame,
+    on_cols: list[str] = ["well"],  # noqa: B006
+    how: Literal["inner"] = "inner",
+) -> pd.DataFrame:
+    """Join two DataFrames and always drop right-side duplicate columns.
+
+    This function merges two DataFrames and automatically drops all columns
+    from the right DataFrame that have the same name as columns in the left
+    DataFrame (excluding join keys). This is useful when you want to prioritize
+    the left DataFrame's values for overlapping columns.
+
+    Parameters
+    ----------
+    left_df : pd.DataFrame
+        Left DataFrame to join (values from this DataFrame are kept for duplicate columns)
+    right_df : pd.DataFrame
+        Right DataFrame to join (duplicate columns from this DataFrame are dropped)
+    on_cols : list[str] | str
+        Column name(s) to join on. Can be a single column name or list of column names.
+    how : str, optional
+        Type of join to perform ('inner', 'left', 'right', 'outer'), default 'inner'
+
+    Returns
+    -------
+    pd.DataFrame
+        Joined DataFrame with all '_right' suffixed columns removed
+
+    Examples
+    --------
+    >>> df1 = pd.DataFrame({'id': [1, 2], 'name': ['A', 'B'], 'value': [10, 20]})
+    >>> df2 = pd.DataFrame({'id': [1, 2], 'name': ['C', 'D'], 'score': [100, 200]})
+    >>> result = smart_join_drop_right(df1, df2, on='id')
+    # Result has 'name' from df1 (['A', 'B']), 'name' from df2 is dropped
+    # Result also has 'value' and 'score' columns
+
+    >>> df1 = pd.DataFrame({'id': [1, 2], 'status': ['active', 'inactive']})
+    >>> df2 = pd.DataFrame({'id': [1, 2], 'status': ['pending', 'complete']})
+    >>> result = smart_join_drop_right(df1, df2, on='id')
+    # Result has only 'status' with values from df1 (['active', 'inactive'])
+    """
+    # Ensure 'on' is a list
+    if isinstance(on_cols, str):
+        on_cols = [on_cols]
+
+    # Perform the join with suffixes to identify duplicates
+    merged = left_df.merge(right_df, on=on_cols, how=how, suffixes=("", "_right"))
+
+    # Find all columns that got the '_right' suffix and drop them
+    right_suffix_cols = [col for col in merged.columns if col.endswith("_right")]
+
+    # Drop all '_right' columns
+    if right_suffix_cols:
+        merged = merged.drop(columns=right_suffix_cols)
+
+    return merged
+
+
 def collate_by_strain(
     folders_list: list[Path],
-    csv_file_name: str = "growth_rates.csv",
+    csv_input_file_name: str = "growth_rates.csv",
     strain_col: str = "strain",
     create_output_folder: bool = True,
     output_dir: str | Path | None = None,
     groupby_pattern: str | None = r"[A-Za-z]+",
+    csv_output_file_name: str = "growth_rates.csv",
 ) -> pd.DataFrame:
     """Collate data by strain, averaging values across wells for each time point.
 
@@ -335,6 +395,8 @@ def collate_by_strain(
         Default is "[A-Za-z]+" (one or more letters - extracts alphabetical part only).
         Example: "strainA1", "strainA2" -> grouped as "strainA"
         If None, uses strain_col values as-is without pattern extraction.
+    csv_output_file_name: str = "growth_rates.csv"
+        Name of the output CSV file for collated data, default 'growth_rates.csv'
 
     Returns
     -------
@@ -347,12 +409,12 @@ def collate_by_strain(
         parent_folder.mkdir(exist_ok=True)
     else:
         parent_folder: Path = folders_list[0].parent
-    df = pd.read_csv(folders_list[0] / csv_file_name)
+    df = pd.read_csv(folders_list[0] / csv_input_file_name)
     df["experiment"] = folders_list[0].name
     for folder in folders_list[1:]:
         if folder == output_dir:
             continue
-        df_new = pd.read_csv(folder / csv_file_name)
+        df_new = pd.read_csv(folder / csv_input_file_name)
         df_new["experiment"] = folder.name
         df = pd.concat([df, df_new], ignore_index=True)
     # Apply pattern extraction if specified
@@ -369,14 +431,13 @@ def collate_by_strain(
         # Drop the temporary groupby key if it was created
         if groupby_pattern is not None:
             group_df = group_df.drop(columns=["_groupby_key"])
-        output_file_name = f"{g}_growth_rates_collated.csv"
         if create_output_folder:
             output_folder = parent_folder / str(g)
             output_folder.mkdir(exist_ok=True)
-            output_file_name = output_folder / output_file_name
+            output_file_path: Path = output_folder / csv_output_file_name
         else:
-            output_file_name = parent_folder / output_file_name
-        group_df.to_csv(output_file_name, index=False)
-        report.append(str(output_file_name))
+            output_file_path: Path = parent_folder / f"{g}_{csv_output_file_name}"
+        group_df.to_csv(output_file_path, index=False)
+        report.append(str(output_file_path))
 
     return pd.DataFrame({"output_file": report})
