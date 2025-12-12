@@ -13,8 +13,17 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
+
+from labUtils.utils import (
+    find_molecular_weight,
+    find_molecular_weight_by_id,
+    get_compound_by_id,
+    get_compound_by_name,
+    ions_from_smiles,
+    mg_to_mmol,
+    od600_to_gCDW,
+)
 
 # pylint: disable=import-outside-toplevel
 
@@ -44,6 +53,7 @@ def build_mappings(
     supp_exchange = (
         (
             supp.strip().lower(),
+            "",
             exchange,
             0.0,  # mass_per_litre_mg
             0.0,  # mmol_concentration
@@ -58,6 +68,7 @@ def build_mappings(
         list(supp_exchange),
         columns=[
             "name",
+            "iupac_name",
             "exchange_reaction",
             "mass_per_litre",
             "mmol_concentration",
@@ -74,14 +85,116 @@ def build_mappings(
             for p in parts:
                 unique_supplements.add(p.lower())
 
+    def find_in_df_mapping(df_mapping, name: str) -> tuple[pd.DataFrame, bool]:
+        df = df_mapping.loc[df_mapping["name"] == name, :]
+        if not df.empty:
+            return df, True
+        df = df_mapping.loc[df_mapping["iupac_name"] == name, :]
+        if not df.empty:
+            return df, False
+        return pd.DataFrame(), False
+
     def update_mapping_df(df_mapping, row):
         # Update or append to df_mapping
-        existing_idx = df_mapping.index[df_mapping["name"] == row["name"]]
+        existing_idx, found_by_name = find_in_df_mapping(df_mapping, row["name"])
         if not existing_idx.empty:
-            df_mapping.loc[existing_idx[0]] = row
+            if not found_by_name:
+                original_name = existing_idx["name"].values[0]
+                iupac_name = row["name"]
+                row["name"] = original_name
+                row["iupac_name"] = iupac_name
+            df_mapping.loc[existing_idx.index[0]] = row
+            #     print("=" * 50)
+            #     print(f" Updated mapping by name for '{row}'.")
+            #     print("=" * 50)
+            # elif row["iupac_name"] != "":
+            existing_idx, found_by_name = find_in_df_mapping(df_mapping, row["iupac_name"])
+            if not existing_idx.empty:
+                if found_by_name:
+                    original_name = existing_idx["name"].values[0]
+                    row["name"] = original_name
+                df_mapping.loc[existing_idx.index[0]] = row
+                # print("=" * 50)
+                # print(f" Updated mapping by iupac name for '{row}'.")
+                # print("=" * 50)
+            else:
+                df_mapping = pd.concat([df_mapping, pd.DataFrame([row])], ignore_index=True)
+                # print("=" * 50)
+                # print(f" Add mapping for '{row}'.")
+                # print("=" * 50)
         else:
             df_mapping = pd.concat([df_mapping, pd.DataFrame([row])], ignore_index=True)
+            # print("=" * 50)
+            # print(f" Add mapping for '{row}'.")
+            # print("=" * 50)
         return df_mapping
+
+    def create_new_rows_for_salts(df_mapping, salt_name, properties):
+        rows = []
+        salt_name = salt_name.strip().lower()
+        if properties.get("pubchem_name", None):
+            compound = get_compound_by_name(properties["pubchem_name"])  # type: ignore
+        elif properties.get("pubchem_id", None):
+            compound = get_compound_by_id(properties["pubchem_id"])  # type: ignore
+        elif salt_name:
+            compound = get_compound_by_name(salt_name)
+        else:
+            raise ValueError(f"The exchange name:'{salt_name}' is marked as salt but no valid name or ID was provided.")
+        compound_smiles: str = compound.smiles  # type: ignore
+        #
+        compounds = ions_from_smiles(compound_smiles)
+        if verbose:
+            print(f"\nProcessing salt '{salt_name}' with SMILES:'{compound_smiles}' into ions:")
+            for ion in compounds:
+                print(f"  Ion: {ion}")
+
+        # assert len(compounds) == len(properties.get("exchange_name", [])), "Mismatch between ions and exchange names"
+        total_molar_mass = sum(ion["molar_mass"] for ion in compounds)
+        for ion_info in compounds:
+            # ion_name = ion_info["smiles_component"]
+            # there are two iupac names obtained from PubChem: iupac_name & iupac_name_secondary
+            # We first lookup the exsiting names in the df_mapping. If any one of them exist, use it.
+            # Otherwise, we use the iupac_name from ion_info
+            iupac_name = ion_info["iupac_name"]
+            df, _ = find_in_df_mapping(df_mapping, iupac_name)
+            if not df.empty:
+                ion_name = iupac_name
+                ion_exchange = df["exchange_reaction"].values[0]
+            else:
+                iupac_name_secondary = ion_info.get("iupac_name_secondary", "Unknown")
+                df, _ = find_in_df_mapping(df_mapping, iupac_name_secondary)
+                if not df.empty:
+                    ion_name = iupac_name_secondary
+                    ion_exchange = df["exchange_reaction"].values[0]
+                else:
+                    # ion_name = ion_info["smiles_component"]
+                    raise ValueError(
+                        f"Could not find ion name:'{iupac_name}' or "
+                        f"its iupac name '{iupac_name_secondary}' for salt '{salt_name}' in mapping dataframe."
+                    )
+
+            ratio = ion_info["molar_mass"] / total_molar_mass if total_molar_mass > 0 else 0.0
+            pubchem_cid = ion_info.get("pubchem_cid", None)
+            # copy the properties to avoid modifying the original
+            row_properties = properties.copy()
+            # Adjust mass_per_litre based on ratio
+            mass_per_litre = properties.get("mass_per_litre", 0.0)
+            row_properties["mass_per_litre"] = float(mass_per_litre) * ratio  # type: ignore
+            row_properties["name"] = ion_name.strip().lower()
+            # row_properties["exchange_name"] = ion_exchange
+            row_properties["exchange_name"] = ion_exchange
+            if pubchem_cid is not None:
+                row_properties["pubchem_id"] = pubchem_cid
+            row = create_new_row(ion_name, row_properties)
+            rows.append(row)
+
+        if verbose:
+            print("=" * 100)
+            print(f" Created mapping for salt '{salt_name}'")
+            for r in rows:
+                print(f"   ion '{r['name']}': {r}")
+            print("=" * 100)
+        return rows
 
     def create_new_row(supp, properties):
         row = {"name": supp.strip().lower()}
@@ -92,6 +205,8 @@ def build_mappings(
         else:
             raise ValueError(f"Missing exchange_name for '{supp}' in file mapping '{str(custom_mapping_file)}'.")
 
+        # Extract iupac_name
+        row["iupac_name"] = properties.get("iupac_name", "")
         # Extract and convert mass_per_litre to mmol if requested
         mass_per_litre = properties.get("mass_per_litre") if isinstance(properties, dict) else 0.0
         row["mass_per_litre"] = float(mass_per_litre)  # type: ignore
@@ -114,7 +229,7 @@ def build_mappings(
         # over file/custom mapping. The default is UNSTATED
         if row["name"] in unique_supplements:
             row["source"] = MediumSource.SUPPLEMENT.value
-        elif "source" in properties and isinstance(properties, dict):
+        elif "source" in properties:
             row["source"] = str(properties["source"])  # type: ignore
         else:
             row["source"] = MediumSource.UNSTATED.value
@@ -148,18 +263,33 @@ def build_mappings(
     for name, properties in file_mapping.items():
         if name is None:
             continue
-        row = create_new_row(name, properties)
-        # Update or append to df_mapping
-        df_mapping = update_mapping_df(df_mapping, row)
+        # salts are handled by selecting their solute ions
+        if properties.get("is_salt", False):  # type: ignore
+            rows = create_new_rows_for_salts(df_mapping, name, properties)
+            # Update or append to df_mapping
+            for row in rows:
+                df_mapping = update_mapping_df(df_mapping, row)
+        else:
+            row = create_new_row(name, properties)
+            # Update or append to df_mapping
+            df_mapping = update_mapping_df(df_mapping, row)
     ############################################################################
     # Level 3: Custom mapping parameter (highest precedence, overrides all)
     if custom_mapping:
         for name, properties in custom_mapping.items():
             if name is None:
                 continue
-            row = create_new_row(name, properties)
-            # Update or append to df_mapping
-            df_mapping = update_mapping_df(df_mapping, row)
+
+            # salts are handled by selecting their solute ions
+            if properties.get("is_salt", False):  # type: ignore
+                rows = create_new_rows_for_salts(df_mapping, name, properties)
+                # Update or append to df_mapping
+                for row in rows:
+                    df_mapping = update_mapping_df(df_mapping, row)
+            else:
+                row = create_new_row(name, properties)
+                # Update or append to df_mapping
+                df_mapping = update_mapping_df(df_mapping, row)
     #####################################################################################
     # Level 4: unique_supplements are provided from metadate. If any is missing, add them
     #          with default properties
@@ -167,7 +297,8 @@ def build_mappings(
     fuzzy_matches = []
     unmapped = []
     for name in unique_supplements:
-        if name not in df_mapping["name"].values:
+        df, _ = find_in_df_mapping(df_mapping, name)
+        if df.empty:
             # Fuzzy match against SBML/manual keys
             matches = difflib.get_close_matches(name, map_keys, n=1, cutoff=fuzzy_threshold)
             if matches:
@@ -175,6 +306,7 @@ def build_mappings(
                 df_row = df_mapping.loc[df_mapping["name"] == best].iloc[0]
                 row = {
                     "name": name,
+                    "iupac_name": df_row["iupac_name"],
                     "exchange_reaction": df_row["exchange_reaction"],
                     "mass_per_litre": df_row["mass_per_litre"],
                     "mmol_concentration": df_row["mmol_concentration"],
@@ -249,6 +381,27 @@ def build_supplement_flux_dataframe(
         | (mappings_df["source"] == MediumSource.FIXED.value),
         "exchange_reaction",
     ]
+    mediums_exchanges = mappings_df.loc[(mappings_df["source"] == MediumSource.MEDIUM.value), "exchange_reaction"]
+
+    def calculate_flux(mapping_row):
+        rxn = mapping_row["exchange_reaction"].values[0]
+        mmol_value = mapping_row["mmol_concentration"].values[0]
+        flux_upper_bound = mapping_row["flux_upper_bound"].values[0]
+        # ensure column exists
+        if rxn not in r_mmol_per_gCWD_per_time:
+            r_mmol_per_gCWD_per_time[rxn] = 0.0
+        # Add mmol value for this supplement
+        max_od = row.get(max_od600_column, 0.0)
+        max_time = row.get(max_time_column, 0.0)
+        avg_od600 = max_od / 2
+        # od600 to gCDW per litre
+        gCWD_per_litre = od600_to_gCDW(avg_od600, od600_conversion_rate)  # noqa: N806
+        # gCWD per liter to gCWD
+        gCWD = (  # noqa: N806
+            gCWD_per_litre * (row.get(total_volume_column, 1.0) / 1e6)  # convert uL to L  # noqa: N806
+        )
+        return rxn, flux_upper_bound, mmol_value / (gCWD * max_time) if gCWD > 0 and max_time > 0 else 0.0
+
     # Build rows with mmol values
     rows_mmol: list[dict[str, float]] = []
     for _, row in growth_rates_df.iterrows():
@@ -261,30 +414,25 @@ def build_supplement_flux_dataframe(
         supps_val = row.get(supplement_column, None)
         if pd.notna(supps_val):
             for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-                names = mappings_df.loc[mappings_df["name"] == part]
-                if names.empty:
+                mapping_row = mappings_df.loc[(mappings_df["name"] == part) | (mappings_df["iupac_name"] == part)]
+                if mapping_row.empty:
                     continue
 
-                rxn = names["exchange_reaction"].values[0]
-                mmol_value = names["mmol_concentration"].values[0]
-                flux_upper_bound = names["flux_upper_bound"].values[0]
-                # ensure column exists
-                if rxn not in r_mmol_per_gCWD_per_time:
-                    r_mmol_per_gCWD_per_time[rxn] = 0.0
-                # Add mmol value for this supplement
-                max_od = row.get(max_od600_column, 0.0)
-                max_time = row.get(max_time_column, 0.0)
-                avg_od600 = max_od / 2
-                # od600 to gCDW per litre
-                gCWD_per_litre = od600_to_gCDW(avg_od600, od600_conversion_rate)  # noqa: N806
-                # gCWD per liter to gCWD
-                gCWD = (  # noqa: N806
-                    gCWD_per_litre * (row.get(total_volume_column, 1.0) / 1e6)  # convert uL to L  # noqa: N806
-                )
+                rxn, flux_upper_bound, flux = calculate_flux(mapping_row)
                 # flux in mmol / gCWD / time
-                r_mmol_per_gCWD_per_time[rxn] = mmol_value / (gCWD * max_time) if gCWD > 0 and max_time > 0 else 0.0
+                r_mmol_per_gCWD_per_time[rxn] = flux
                 if r_mmol_per_gCWD_per_time[rxn] == 0.0 and flux_upper_bound > 0.0:
                     r_mmol_per_gCWD_per_time[rxn] = flux_upper_bound
+        for ex in mediums_exchanges:
+            mapping_row = mappings_df.loc[mappings_df["exchange_reaction"] == ex]
+            if mapping_row.empty:
+                continue
+
+            rxn, flux_upper_bound, flux = calculate_flux(mapping_row)
+            # flux in mmol / gCWD / time
+            r_mmol_per_gCWD_per_time[rxn] = flux
+            if r_mmol_per_gCWD_per_time[rxn] == 0.0 and flux_upper_bound > 0.0:
+                r_mmol_per_gCWD_per_time[rxn] = flux_upper_bound
         rows_mmol.append(r_mmol_per_gCWD_per_time)
 
     result_df_mmol = pd.DataFrame(rows_mmol)
@@ -349,7 +497,7 @@ def build_AMN_inputs_dataframe(  # noqa: N802
         supps_val = row.get(supplement_column)
         if pd.notna(supps_val):
             for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-                names = mappings_df.loc[mappings_df["name"] == part]
+                names = mappings_df.loc[(mappings_df["name"] == part) | (mappings_df["iupac_name"] == part)]
                 if names.empty:
                     continue
                 rxn = names["exchange_reaction"].values[0]
@@ -364,6 +512,10 @@ def build_AMN_inputs_dataframe(  # noqa: N802
         rows.append(new_row)
 
     result_df = pd.DataFrame(rows)
+    # ensure medium columns are present (even if empty)
+    medium_exchanges = mappings_df.loc[mappings_df["source"] == MediumSource.MEDIUM.value]
+    for ex in medium_exchanges["exchange_reaction"]:
+        result_df[ex] = 1
     # ensure fixed columns are present (even if empty)
     fixed_exchanges = mappings_df.loc[mappings_df["source"] == MediumSource.FIXED.value]
     for ex in fixed_exchanges["exchange_reaction"]:
@@ -427,7 +579,7 @@ def build_AMN_levels_dataframe(  # noqa: N802
             level_val, max_val = custom_bounds[col]
             template_data[col] = [level_val, max_val, 0]
         elif trimmed_col in flux_upper_bounds and flux_upper_bounds.get(trimmed_col, 0.0) > 0.0:
-            # Second priority: Use upper bound from normalized map if available
+            # Second priority: Use upper bound from mappings_df.flux_upper_bound in fluxes if available
             max_val = flux_upper_bounds.get(trimmed_col, 0)
             template_data[col] = [default_level, max_val, 0]
         elif sbml_bounds and col in sbml_bounds:
@@ -745,124 +897,3 @@ def load_minimal_media_exchanges() -> list[str]:
         "EX_tungs_e_i",  # Tungsten
         "EX_slnt_e_i",  # Selenite
     ]
-
-
-def od600_to_gCDW(od600: float | list[float] | np.ndarray, conversion_rate: float = 0.4) -> float | np.ndarray:  # noqa: N802
-    """
-    Convert OD600 to grams of cell dry weight (gCDW) for E. coli.
-
-    Parameters
-    ----------
-    od600 : float | list[float] | np.ndarray
-        Optical density at 600 nm (OD600) measurement
-
-    conversion_rate : float
-        Conversion factor from OD600 to gCDW per litre (default: 0.4 gCDW/L per OD600)
-    """
-    if isinstance(od600, (list, np.ndarray)):
-        od600 = np.array(od600)  # Convert to numpy array for vectorized operations
-
-    return od600 * conversion_rate
-
-
-def mg_to_mmol(
-    mass_mg: float | list[float] | np.ndarray,
-    molar_mass_g_per_mol: float,
-) -> float | np.ndarray:
-    """
-    Convert mass in miligrams to millimoles.
-
-    Parameters
-    ----------
-    mass_mg : float | list[float] | np.ndarray
-        Mass in miligrams
-
-    molar_mass_g_per_mol : float
-        Molar mass of the substance in grams per mole
-
-    Returns
-    -------
-    float | np.ndarray
-        Amount in millimoles
-    """
-    if isinstance(mass_mg, (list, np.ndarray)):
-        mass_mg = np.array(mass_mg)  # Convert to numpy array for vectorized operations
-
-    return mass_mg / molar_mass_g_per_mol  # mg to mmol
-
-
-def find_molecular_weight(
-    compound_name: str,
-) -> float | None:
-    """
-    Find the molecular weight of a compound using PubChem.
-
-    Parameters
-    ----------
-    compound_name : str
-        Common name of the compound
-
-    Returns
-    -------
-    float | None
-        Molecular weight in g/mol, or None if not found
-
-    Examples
-    --------
-    >>> mw = find_molecular_weight("glucose" )
-    >>> print(mw)  # 180.16
-    """
-    try:
-        from pubchempy import get_compounds
-
-        compound = get_compounds(compound_name, "name")
-        if len(compound) > 0:
-            return compound[0].molecular_weight
-        else:
-            print(f"Warning: pubchempy did not find the compound '{compound_name}', cannot fetch molecular weight.")
-            return None
-    except ImportError as e:
-        print("Warning: pubchempy not available, cannot fetch molecular weight.")
-        print(f"ImportError: {e}")
-        return None
-    except Exception as e:
-        print(f"Warning: An error occurred while fetching molecular weight for '{compound_name}': {e}")
-        return None
-
-
-def find_molecular_weight_by_id(
-    compound_id: str,
-) -> float | None:
-    """
-    Find the molecular weight of a compound using PubChem.
-
-    Parameters
-    ----------
-    compound_id : str
-        PubChem ID of the compound
-    Returns
-    -------
-    float | None
-        Molecular weight in g/mol, or None if not found
-
-    Examples
-    --------
-    >>> mw = find_molecular_weight_by_id("5793" )
-    >>> print(mw)  # 180.16
-    """
-    try:
-        from pubchempy import get_compounds
-
-        compound = get_compounds(compound_id, "cid")
-        if len(compound) > 0:
-            return compound[0].molecular_weight
-        else:
-            print(f"Warning: pubchempy did not find the compound '{compound_id}', cannot fetch molecular weight.")
-            return None
-    except ImportError as e:
-        print("Warning: pubchempy not available, cannot fetch molecular weight.")
-        print(f"ImportError: {e}")
-        return None
-    except Exception as e:
-        print(f"Warning: An error occurred while fetching molecular weight for '{compound_id}': {e}")
-        return None

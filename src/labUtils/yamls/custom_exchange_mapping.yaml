@@ -4,20 +4,25 @@ custom_mapping:
     # ============================================================================
     # Format:
     # {   exchange_name: reaction_id,
+    #     iupac_name: iupac_name,
     #     mass_per_litre: 0.0,
     #     pubchem_name: None,
     #     pubchem_id: None,
     #     flux_upper_bound: 0.0,
     #     source: unstated, # unstated, supplement, medium, fixed
-    #     compounds:
-    #
-    #
+    #     is_salt: true/false, # whether this is a salt made up of ions
     # }
+    #
+    # iupac_name: Some compounds have diiferent IUPAC names than their common names.
+    #    for instance 'Azanium' is the IUPAC name for 'Ammonia' (NH4+).
     # The mass_per_litre (in g/L unit) is used as the default concentration (0.0 means use model default)
     #
     # source default value is unstated. supplement has the highest precedence and usually reads
     # from metadata. medium is the next in precedence, and usually is in stock form and probably
     # is in compound form. fixed means fixed flux that does not change.
+    #
+    # If is_salt is true, the compound is made up of multiple ions, so, using pubchempy and its
+    # SMILES structure, we can compute the molecular weight of the entire salt compound,
 
     # Other non-amino acids
     succinate:
@@ -185,6 +190,7 @@ custom_mapping:
         flux_upper_bound: 2.2
     ammonia:  # Ammonia (nitrogen source)
         exchange_name: EX_nh4_e
+        iupac_name: azanium
         mass_per_litre: 1.0
         flux_upper_bound: 2.2
     chloride:  # Chloride
@@ -199,42 +205,6 @@ custom_mapping:
         exchange_name: EX_h3bo3_e
         mass_per_litre: 0.01
 
-    # Specific salt forms
-    na2hpo4:  # Disodium phosphate (Na₂HPO₄)  # VEIRFY
-        exchange_name: EX_pi_e
-        mass_per_litre: 6.78
-        pubchem_id: 24203 # Sodium Phosphate, Dibasic
-    kh2po4:  # Monopotassium phosphate (KH₂PO₄) # VEIRFY
-        exchange_name: EX_pi_e
-        mass_per_litre: 3.0
-        pubchem_id: 516951 # Monobasic potassium phosphate
-    nacl:  # Sodium chloride (NaCl) # VEIRFY
-        exchange_name: EX_cl_e
-        mass_per_litre: 0.5
-        flux_upper_bound: 2.2
-    nh4cl:  # Ammonium chloride (NH₄Cl) # VEIRFY
-        exchange_name: EX_nh4_e
-        mass_per_litre: 1.0
-        pubchem_id: 25517
-        flux_upper_bound: 2.2
-    fecl3_6h2o:  # Ferric chloride hexahydrate (FeCl3·6H2O) # VEIRFY
-        exchange_name: EX_fe3_e
-        mass_per_litre: 0.83
-    zncl2:  # Zinc chloride (ZnCl2) # VEIRFY
-        exchange_name: EX_zn2_e
-        mass_per_litre: 0.084
-    cuso4_5h2o:  # Copper sulfate pentahydrate (CuSO4·5H2O) # VEIRFY
-        exchange_name: EX_cu2_e
-        mass_per_litre: 0.019
-    cocl2_6h2o:  # Cobalt chloride hexahydrate (CoCl2·6H2O) # VEIRFY
-        exchange_name: EX_cobalt2_e
-        mass_per_litre: 0.01
-    mncl2_4h2o:  # Manganese chloride tetrahydrate (MnCl2·4H2O) # VEIRFY
-        exchange_name: EX_mn2_e
-        mass_per_litre: 0.0016
-    h3bo3:  # Boric acid (H3BO3) # VEIRFY
-        exchange_name: EX_h3bo3_e
-        mass_per_litre: 0.01
 
     # Major cations
     potassium:  # Potassium (K+)
@@ -308,6 +278,7 @@ custom_mapping:
     # Gases
     oxygen:  # Oxygen (O2)
         exchange_name: EX_o2_e
+        iupac_name: "molecular oxygen"
         mass_per_litre: 0.0
         flux_upper_bound: 2.2
     carbon_dioxide:  # Carbon dioxide (CO2)
@@ -334,3 +305,88 @@ custom_mapping:
     galactose:  # D-Galactose
         exchange_name: EX_gal_e
         mass_per_litre: 0.0
+
+
+    # Specific salt forms
+    # na2hpo4:  # Disodium phosphate (Na₂HPO₄)  # VEIRFY
+    #     # exchange_name: EX_pi_e
+    #     mass_per_litre: 6.78
+    #     pubchem_id: 24203 # Sodium Phosphate, Dibasic
+    #     is_salt: true
+    #     source: medium
+
+    # kh2po4:  # Monopotassium phosphate (KH₂PO₄) # VEIRFY
+    #     # exchange_name: EX_pi_e
+    #     mass_per_litre: 3.0
+    #     pubchem_id: 516951 # Monobasic potassium phosphate
+    #     is_salt: true
+    #     source: medium
+
+    nacl:  # Sodium chloride (NaCl) # VEIRFY
+        # exchange_name: [EX_na1_e, EX_cl_e]
+        mass_per_litre: 0.5
+        # flux_upper_bound: 2.2
+        source: medium
+        is_salt: true
+
+    nh4cl:  # Ammonium chloride (NH₄Cl) # VEIRFY
+        # exchange_name: EX_nh4_e
+        mass_per_litre: 1.0
+        pubchem_id: 25517
+        # flux_upper_bound: 2.2
+        source: medium
+        is_salt: true
+
+    # SMILES:'O.O.O.O.O.O.Cl[Fe](Cl)Cl'
+    # fecl3.6h2o:  # Ferric chloride hexahydrate (FeCl3·6H2O) # VEIRFY
+    #     exchange_name: EX_fe3_e
+    #     mass_per_litre: 0.83
+    #     is_salt: true
+    #     source: medium
+
+    #  SMILES:'Cl[Zn]Cl'
+    #  Ion: {'smiles_component': 'Cl[Zn]Cl',
+    #        'iupac_name': 'dichlorozinc',
+    #        'iupac_name_secondary': None,
+    #        'pubchem_cid': 5727,
+    #        'composition': {'Cl': 2, 'Zn': 1},
+    #        'charge': 0,
+    #        'molar_mass': 136.286}
+    # zncl2:  # Zinc chloride (ZnCl2) # VEIRFY
+    #     # exchange_name: EX_zn2_e
+    #     mass_per_litre: 0.084
+    #     is_salt: true
+    #     source: medium
+
+    # SMILES:'O.O.O.O.O.[O-]S(=O)(=O)[O-].[Cu+2]'
+    # Ion: {'smiles_component': 'O', 'iupac_name': 'oxidane', 'iupac_name_secondary': None, 'pubchem_cid': 962}
+    # Ion: {'smiles_component': 'O', 'iupac_name': 'oxidane', 'iupac_name_secondary': None, 'pubchem_cid': 962}
+    # Ion: {'smiles_component': 'O', 'iupac_name': 'oxidane', 'iupac_name_secondary': None, 'pubchem_cid': 962}
+    # Ion: {'smiles_component': 'O', 'iupac_name': 'oxidane', 'iupac_name_secondary': None, 'pubchem_cid': 962}
+    # Ion: {'smiles_component': 'O', 'iupac_name': 'oxidane', 'iupac_name_secondary': None, 'pubchem_cid': 962}
+    # Ion: {'smiles_component': 'O', 'iupac_name': 'oxidane', 'iupac_name_secondary': None, 'pubchem_cid': 962}
+    # Ion: {'smiles_component': 'O', 'iupac_name': 'sulfate', 'iupac_name_secondary': 'molecular oxygen', 'pubchem_cid': 1117}
+    # Ion: {'smiles_component': 'Cu+2', 'iupac_name': 'copper(2+)', 'iupac_name_secondary': 'copper(2+)', 'pubchem_cid': 27099}
+    # cuso4.5h2o:  # Copper sulfate pentahydrate (CuSO4·5H2O) # VEIRFY
+    #     # exchange_name: EX_cu2_e
+    #     mass_per_litre: 0.019
+    #     is_salt: true
+    #     source: medium
+
+    # cocl2.6h2o:  # Cobalt chloride hexahydrate (CoCl2·6H2O) # VEIRFY
+    #     # exchange_name: EX_cobalt2_e
+    #     mass_per_litre: 0.01
+    #     is_salt: true
+    #     source: medium
+
+    # mncl2.4h2o:  # Manganese chloride tetrahydrate (MnCl2·4H2O) # VEIRFY
+    #     # exchange_name: EX_mn2_e
+    #     mass_per_litre: 0.0016
+    #     is_salt: true
+    #     source: medium
+
+    # h3bo3:  # Boric acid (H3BO3) # VEIRFY
+    #     # exchange_name: EX_h3bo3_e
+    #     mass_per_litre: 0.01
+    #     is_salt: true
+    #     source: medium

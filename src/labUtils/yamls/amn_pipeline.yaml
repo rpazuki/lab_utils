@@ -51,10 +51,10 @@ pipelines:
                         - EX_mobd_e
                         - EX_so4_e
                         - EX_thr__L_e
-                        - EX_nh4_e #
+                        # - EX_nh4_e #
                         - EX_k_e #
-                        - EX_na1_e
-                        - EX_cl_e
+                        # - EX_na1_e
+                        # - EX_cl_e
                         - EX_o2_e #
                         - EX_tungs_e
                         - EX_slnt_e
