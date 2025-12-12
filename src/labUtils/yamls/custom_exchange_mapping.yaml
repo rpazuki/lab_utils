@@ -8,11 +8,16 @@ custom_mapping:
     #     pubchem_name: None,
     #     pubchem_id: None,
     #     flux_upper_bound: 0.0,
-    #     is_baseline: false,
-    #     is_supplement: false, # It is read from metadata, but can be overridden here
+    #     source: unstated, # unstated, supplement, medium, fixed
+    #     compounds:
+    #
     #
     # }
     # The mass_per_litre (in g/L unit) is used as the default concentration (0.0 means use model default)
+    #
+    # source default value is unstated. supplement has the highest precedence and usually reads
+    # from metadata. medium is the next in precedence, and usually is in stock form and probably
+    # is in compound form. fixed means fixed flux that does not change.
 
     # Other non-amino acids
     succinate:

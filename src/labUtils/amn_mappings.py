@@ -9,6 +9,7 @@
 import difflib
 import logging
 import warnings
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -18,13 +19,21 @@ import pandas as pd
 # pylint: disable=import-outside-toplevel
 
 
+# and enumerator for medium source
+class MediumSource(Enum):
+    UNSTATED = "unstated"
+    SUPPLEMENT = "supplement"
+    MEDIUM = "medium"
+    FIXED = "fixed"
+
+
 def build_mappings(
     growth_rates_df: pd.DataFrame,
     supplement_to_exchange_map: dict[str, str],
     supplement_column: str,
     custom_mapping_file: str | Path | None = None,
     custom_mapping: dict[str, str | dict[str, Any]] | None = None,
-    baseline_exchanges: list[str] | None = None,
+    fixed_exchanges: list[str] | None = None,
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
     verbose: bool = False,
@@ -39,8 +48,7 @@ def build_mappings(
             0.0,  # mass_per_litre_mg
             0.0,  # mmol_concentration
             0.0,  # flux_upper_bound
-            False,  # is_baseline
-            False,  # is_supplement
+            MediumSource.UNSTATED.value,
         )
         for supp, exchange in supplement_to_exchange_map.items()
         if supp is not None
@@ -49,13 +57,12 @@ def build_mappings(
     df_mapping = pd.DataFrame(
         list(supp_exchange),
         columns=[
-            "supplement",
+            "name",
             "exchange_reaction",
             "mass_per_litre",
             "mmol_concentration",
             "flux_upper_bound",
-            "is_baseline",
-            "is_supplement",
+            "source",
         ],
     )
     #############################################################################
@@ -69,7 +76,7 @@ def build_mappings(
 
     def update_mapping_df(df_mapping, row):
         # Update or append to df_mapping
-        existing_idx = df_mapping.index[df_mapping["supplement"] == row["supplement"]]
+        existing_idx = df_mapping.index[df_mapping["name"] == row["name"]]
         if not existing_idx.empty:
             df_mapping.loc[existing_idx[0]] = row
         else:
@@ -77,15 +84,13 @@ def build_mappings(
         return df_mapping
 
     def create_new_row(supp, properties):
-        row = {"supplement": supp.strip().lower()}
+        row = {"name": supp.strip().lower()}
         # Extract exchange_name from nested dict
         exchange_name: str = properties.get("exchange_name") if isinstance(properties, dict) else None  # type: ignore
         if exchange_name:
             row["exchange_reaction"] = exchange_name
         else:
-            raise ValueError(
-                f"Missing exchange_name for supplement '{supp}' in file mapping '{str(custom_mapping_file)}'."
-            )
+            raise ValueError(f"Missing exchange_name for '{supp}' in file mapping '{str(custom_mapping_file)}'.")
 
         # Extract and convert mass_per_litre to mmol if requested
         mass_per_litre = properties.get("mass_per_litre") if isinstance(properties, dict) else 0.0
@@ -95,7 +100,7 @@ def build_mappings(
         elif "pubchem_id" in properties:
             molecular_weight = find_molecular_weight_by_id(properties["pubchem_id"])  # type: ignore
         else:
-            molecular_weight = find_molecular_weight(row["supplement"])
+            molecular_weight = find_molecular_weight(row["name"])
         mmol = mg_to_mmol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0  # type: ignore
         row["mmol_concentration"] = mmol  # type: ignore
 
@@ -105,19 +110,15 @@ def build_mappings(
         else:
             row["flux_upper_bound"] = 0.0  # type: ignore
 
-        # Extract is_baseline if present
-        if "is_baseline" in properties and isinstance(properties, dict):
-            row["is_baseline"] = bool(properties["is_baseline"])  # type: ignore
+        # update source. unique_supplements from metadata has precedence
+        # over file/custom mapping. The default is UNSTATED
+        if row["name"] in unique_supplements:
+            row["source"] = MediumSource.SUPPLEMENT.value
+        elif "source" in properties and isinstance(properties, dict):
+            row["source"] = str(properties["source"])  # type: ignore
         else:
-            row["is_baseline"] = False  # type: ignore
+            row["source"] = MediumSource.UNSTATED.value
 
-        # Extract is_supplement if present
-        if "is_supplement" in properties and isinstance(properties, dict):
-            row["is_supplement"] = bool(properties["is_supplement"])  # type: ignore
-        elif row["supplement"] in unique_supplements:
-            row["is_supplement"] = True  # type: ignore
-        else:
-            row["is_supplement"] = False  # type: ignore
         return row
 
     ############################################################################
@@ -144,87 +145,86 @@ def build_mappings(
         except Exception as e:
             logging.warning(f"Failed to load custom mapping file {custom_mapping_file}: {e}")
     #################################################################
-    for supp, properties in file_mapping.items():
-        if supp is None:
+    for name, properties in file_mapping.items():
+        if name is None:
             continue
-        row = create_new_row(supp, properties)
+        row = create_new_row(name, properties)
         # Update or append to df_mapping
         df_mapping = update_mapping_df(df_mapping, row)
     ############################################################################
     # Level 3: Custom mapping parameter (highest precedence, overrides all)
     if custom_mapping:
-        for supp, properties in custom_mapping.items():
-            if supp is None:
+        for name, properties in custom_mapping.items():
+            if name is None:
                 continue
-            row = create_new_row(supp, properties)
+            row = create_new_row(name, properties)
             # Update or append to df_mapping
             df_mapping = update_mapping_df(df_mapping, row)
     #####################################################################################
     # Level 4: unique_supplements are provided from metadate. If any is missing, add them
     #          with default properties
-    map_keys = list(df_mapping["supplement"].values)
+    map_keys = list(df_mapping["name"].values)
     fuzzy_matches = []
     unmapped = []
-    for supp in unique_supplements:
-        if supp not in df_mapping["supplement"].values:
+    for name in unique_supplements:
+        if name not in df_mapping["name"].values:
             # Fuzzy match against SBML/manual keys
-            matches = difflib.get_close_matches(supp, map_keys, n=1, cutoff=fuzzy_threshold)
+            matches = difflib.get_close_matches(name, map_keys, n=1, cutoff=fuzzy_threshold)
             if matches:
                 best = matches[0]
-                df_row = df_mapping.loc[df_mapping["supplement"] == best].iloc[0]
+                df_row = df_mapping.loc[df_mapping["name"] == best].iloc[0]
                 row = {
-                    "supplement": supp,
+                    "name": name,
                     "exchange_reaction": df_row["exchange_reaction"],
                     "mass_per_litre": df_row["mass_per_litre"],
                     "mmol_concentration": df_row["mmol_concentration"],
                     "flux_upper_bound": df_row["flux_upper_bound"],
-                    "is_baseline": False,
-                    "is_supplement": True,
+                    "source": MediumSource.SUPPLEMENT.value,
                 }
                 # Update or append to df_mapping
                 df_mapping = update_mapping_df(df_mapping, row)
-                fuzzy_matches.append((supp, best, row))
+                fuzzy_matches.append((name, best, row))
             else:
                 message = (
-                    f"Supplement '{supp}' found in metadata '{growth_rates_df.Name}', \n"
+                    f"The exchange mapping element '{name}' found in metadata '{growth_rates_df.Name}', \n"
                     f" but missing in mappings file '{custom_mapping_file}', \n"
                     f" and organism's mapping provided as 'supplement_to_exchange_map' argument."
                 )
                 logging.warning(message)
                 warnings.warn(message, UserWarning, stacklevel=2)
-                unmapped.append(supp)
+                unmapped.append(name)
     if verbose:
         print("\n" + "=" * 70)
-        print("Supplement to Exchange Reaction Mapping")
+        print("Medium source to Exchange Reaction Mapping")
         print("=" * 70)
 
         if fuzzy_matches:
             print(f"\nFuzzy matches ({len(fuzzy_matches)}):")
-            for supp, matched_key, r in fuzzy_matches:
-                print(f"  {supp:30s} -> {r['exchange_reaction']:50s} (matched via '{matched_key}')")
+            for name, matched_key, r in fuzzy_matches:
+                print(f"  {name:30s} -> {r['exchange_reaction']:50s} (matched via '{matched_key}')")
 
         if unmapped:
             print(f"\nUnmapped supplements ({len(unmapped)}):")
-            for supp in unmapped:
-                print(f"  {supp}")
+            for name in unmapped:
+                print(f"  {name}")
 
         print("\n" + "=" * 70 + "\n")
 
-    if baseline_exchanges:
+    if fixed_exchanges:
         # Mark baseline exchanges
-        df_mapping.loc[df_mapping["exchange_reaction"].isin(baseline_exchanges), "is_baseline"] = True
+        df_mapping.loc[df_mapping["exchange_reaction"].isin(fixed_exchanges), "source"] = MediumSource.FIXED.value
 
     #######################################################################################
     # Sanity check: each row must be eather is_supplement or is_baseline, both cannot be True
-    df_subsets = df_mapping[(df_mapping["is_supplement"] & df_mapping["is_baseline"])]
-    if not df_subsets.empty:
-        for _, row in df_subsets.iterrows():
-            message = (
-                f"Supplement '{row['supplement']}' cannot be both is_supplement:'True' and is_baseline:'True'. \n"
-                f"Check mappings file '{custom_mapping_file}' and  metadata."
-            )
-            logging.warning(message)
-            warnings.warn(message, UserWarning, stacklevel=2)
+    # df_subsets = df_mapping[(df_mapping["is_supplement"] & df_mapping["is_baseline"])]
+    # if not df_subsets.empty:
+    #     for _, row in df_subsets.iterrows():
+    #         message = (
+    #             f"Medium source '{row['name']}' cannot be both is_supplement:'True' and is_baseline:'True'. \n"
+    #             f"Check mappings file '{custom_mapping_file}' and  metadata."
+    #         )
+    #         logging.warning(message)
+    #         warnings.warn(message, UserWarning, stacklevel=2)
     #####################################################################################
     return df_mapping
 
@@ -242,26 +242,32 @@ def build_supplement_flux_dataframe(
     separator: str = ";",
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
-    # Create a dictionary of all supplement that are either is_supplement or is_baseline
-    all_exchanges = mappings_df.loc[mappings_df["is_supplement"] | mappings_df["is_baseline"], "exchange_reaction"]
+    # Create a dictionary of all sources that are either supplement, medium, or fixed
+    all_exchanges = mappings_df.loc[
+        (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
+        | (mappings_df["source"] == MediumSource.MEDIUM.value)
+        | (mappings_df["source"] == MediumSource.FIXED.value),
+        "exchange_reaction",
+    ]
     # Build rows with mmol values
     rows_mmol: list[dict[str, float]] = []
     for _, row in growth_rates_df.iterrows():
         # Skip rows where success column exists and is False
         if success_column in growth_rates_df.columns and not row[success_column]:
             continue
-        r_mmol_per_gCWD_per_time: dict[str, float] = dict.fromkeys(all_exchanges, 0.0)
+        # create a row's dictionary for all exchanges
+        r_mmol_per_gCWD_per_time: dict[str, float] = dict.fromkeys(all_exchanges, 0.0)  # noqa: N806
         # parse supplements for this row
         supps_val = row.get(supplement_column, None)
         if pd.notna(supps_val):
             for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-                supplements = mappings_df.loc[mappings_df["supplement"] == part]
-                if supplements.empty:
+                names = mappings_df.loc[mappings_df["name"] == part]
+                if names.empty:
                     continue
 
-                rxn = supplements["exchange_reaction"].values[0]
-                mmol_value = supplements["mmol_concentration"].values[0]
-                flux_upper_bound = supplements["flux_upper_bound"].values[0]
+                rxn = names["exchange_reaction"].values[0]
+                mmol_value = names["mmol_concentration"].values[0]
+                flux_upper_bound = names["flux_upper_bound"].values[0]
                 # ensure column exists
                 if rxn not in r_mmol_per_gCWD_per_time:
                     r_mmol_per_gCWD_per_time[rxn] = 0.0
@@ -272,7 +278,7 @@ def build_supplement_flux_dataframe(
                 # od600 to gCDW per litre
                 gCWD_per_litre = od600_to_gCDW(avg_od600, od600_conversion_rate)  # noqa: N806
                 # gCWD per liter to gCWD
-                gCWD = (
+                gCWD = (  # noqa: N806
                     gCWD_per_litre * (row.get(total_volume_column, 1.0) / 1e6)  # convert uL to L  # noqa: N806
                 )
                 # flux in mmol / gCWD / time
@@ -282,12 +288,12 @@ def build_supplement_flux_dataframe(
         rows_mmol.append(r_mmol_per_gCWD_per_time)
 
     result_df_mmol = pd.DataFrame(rows_mmol)
-    # ensure baseline columns are present (even if empty)
-    baselines = mappings_df.loc[mappings_df["is_baseline"]]
-    for ex, flux_upper_bound in baselines[["exchange_reaction", "flux_upper_bound"]].itertuples(index=False):
+    # ensure fixed columns are present (even if empty)
+    fixed_exchanges = mappings_df.loc[mappings_df["source"] == MediumSource.FIXED.value]
+    for ex, flux_upper_bound in fixed_exchanges[["exchange_reaction", "flux_upper_bound"]].itertuples(index=False):
         if ex not in result_df_mmol.columns:
             if flux_upper_bound > 0.0:
-                result_df_mmol[ex] = flux_upper_bound
+                result_df_mmol[ex] = flux_upper_bound  # noqa: N806
             else:
                 result_df_mmol[ex] = 0.0
         else:
@@ -324,24 +330,29 @@ def build_AMN_inputs_dataframe(  # noqa: N802
     separator: str = ";",
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
-    # Create a dictionary of all supplement that are either is_supplement or is_baseline
-    all_exchanges = mappings_df.loc[mappings_df["is_supplement"] | mappings_df["is_baseline"], "exchange_reaction"]
+    # Create a dictionary of all sources that are either supplement, medium, or fixed
+    all_exchanges = mappings_df.loc[
+        (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
+        | (mappings_df["source"] == MediumSource.MEDIUM.value)
+        | (mappings_df["source"] == MediumSource.FIXED.value),
+        "exchange_reaction",
+    ]
     # Build rows
     rows: list[dict[str, int | float | None]] = []
     for _, row in growth_rates_df.iterrows():
         # Skip rows where success column exists and is False
         if success_column in growth_rates_df.columns and not row[success_column]:
             continue
-
+        # create a row's dictionary for all exchanges
         new_row: dict[str, int | float | None] = dict.fromkeys(all_exchanges, 0)
         # parse supplements for this row
         supps_val = row.get(supplement_column)
         if pd.notna(supps_val):
             for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-                supplements = mappings_df.loc[mappings_df["supplement"] == part]
-                if supplements.empty:
+                names = mappings_df.loc[mappings_df["name"] == part]
+                if names.empty:
                     continue
-                rxn = supplements["exchange_reaction"].values[0]
+                rxn = names["exchange_reaction"].values[0]
                 # ensure column exists
                 # if rxn not in row:
                 #     row[rxn] = 0
@@ -353,9 +364,9 @@ def build_AMN_inputs_dataframe(  # noqa: N802
         rows.append(new_row)
 
     result_df = pd.DataFrame(rows)
-    # ensure baseline columns are present (even if empty)
-    baselines = mappings_df.loc[mappings_df["is_baseline"]]
-    for ex in baselines["exchange_reaction"]:
+    # ensure fixed columns are present (even if empty)
+    fixed_exchanges = mappings_df.loc[mappings_df["source"] == MediumSource.FIXED.value]
+    for ex in fixed_exchanges["exchange_reaction"]:
         result_df[ex] = 1
 
     # Reorder columns: exchanges sorted, then growth rate last
@@ -375,31 +386,49 @@ def build_AMN_inputs_dataframe(  # noqa: N802
 def build_AMN_levels_dataframe(  # noqa: N802
     exchange_matrix: pd.DataFrame,
     mappings_df: pd.DataFrame,
+    flux_df: pd.DataFrame | None = None,
     growth_rate_column: str = "mu_max",
     default_level: int = 1,
     default_max_value: int = 1000,
     sbml_bounds: dict[str, tuple[int, int]] | None = None,
     custom_bounds: dict[str, tuple[int, int]] | None = None,
+    exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
-    # Create a dictionary of all flux upper bound where supplement are either is_supplement or is_baseline
-    flux_upper_bounds = mappings_df.loc[mappings_df["is_supplement"] | mappings_df["is_baseline"], "flux_upper_bound"]
+    # Create a dictionary of all flux upper bound where exchange are either supplement, medium, or fixed
+    flux_upper_bounds = (
+        mappings_df.loc[
+            (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
+            | (mappings_df["source"] == MediumSource.MEDIUM.value)
+            | (mappings_df["source"] == MediumSource.FIXED.value),
+            ["exchange_reaction", "flux_upper_bound"],
+        ]
+        .set_index("exchange_reaction")["flux_upper_bound"]
+        .to_dict()
+    )
+
+    if flux_df is not None:
+        # Override with flux_df values if provided and greater than zero
+        for col in flux_df.columns:
+            trimmed_col = col.replace(exchange_suffix, "") if exchange_suffix else col
+            if trimmed_col in flux_upper_bounds and flux_df[col].max() > 0.0:
+                flux_upper_bounds[trimmed_col] = flux_df[col].max()
 
     # Get all exchange columns (exclude growth rate column)
     exchange_cols = [col for col in exchange_matrix.columns if col != growth_rate_column]
-
     # Create the template dataframe
     template_data: dict[str, list[str | float]] = {"name": ["level", "max_value", "ratio_drawing"]}
 
     # Add columns for each exchange reaction with values
     for col in exchange_cols:
+        trimmed_col = col.replace(exchange_suffix, "") if exchange_suffix else col
         # Precedence: custom_bounds > mappings_df.flux_upper_bound > sbml_bounds > defaults
         if custom_bounds and col in custom_bounds:
             # Highest priority: custom bounds
             level_val, max_val = custom_bounds[col]
             template_data[col] = [level_val, max_val, 0]
-        elif col in flux_upper_bounds and flux_upper_bounds.get(col, 0.0) > 0.0:
+        elif trimmed_col in flux_upper_bounds and flux_upper_bounds.get(trimmed_col, 0.0) > 0.0:
             # Second priority: Use upper bound from normalized map if available
-            max_val = flux_upper_bounds.get(col, 0)
+            max_val = flux_upper_bounds.get(trimmed_col, 0)
             template_data[col] = [default_level, max_val, 0]
         elif sbml_bounds and col in sbml_bounds:
             # Third priority: SBML bounds
@@ -410,475 +439,6 @@ def build_AMN_levels_dataframe(  # noqa: N802
             template_data[col] = [default_level, default_max_value, 0]
 
     return pd.DataFrame(template_data)
-
-
-def build_supplement_mappings(
-    growth_rates_df: pd.DataFrame,
-    supplement_to_exchange_map: dict[str, str],
-    supplement_column: str,
-    custom_mapping_file: str | Path | None = None,
-    custom_mapping: dict[str, str | dict[str, Any]] | None = None,
-    baseline_exchanges: list[str] | None = None,
-    separator: str = ";",
-    include_mmol: bool = True,
-    fuzzy_threshold: float = 0.6,
-    verbose: bool = False,
-) -> tuple[dict[str, float], dict[str, float], list[str], dict[str, str]]:
-    """
-    Build normalized supplement mappings, mmol concentrations, and extract unique supplements.
-
-    This unified helper function loads YAML configuration once and builds all necessary
-    mappings to avoid code duplication.
-
-    Parameters
-    ----------
-    growth_rates_df : pd.DataFrame
-        Dataframe containing supplement information
-    supplement_to_exchange_map : Dict[str, str]
-        Base mapping from supplement names to exchange reaction IDs
-    supplement_column : str
-        Name of the column containing supplement information
-    custom_mapping_file : Optional[Union[str, Path]]
-        Path to YAML file with custom mapping
-    custom_mapping : Optional[Dict[str, str | Dict[str, Any]]] = None
-        User-defined custom mapping with optional mass_per_litre values    s
-    separator : str = ";"
-        Character used to separate multiple supplements
-    include_mmol : bool = True
-        If True, build mmol concentration mappings. If False, skip mmol calculations
-        for better performance when only exchange mappings are needed.
-
-    Returns
-    -------
-    Tuple[Dict[str, str], Dict[str, float], Set[str], dict[str, float]]
-        Tuple containing:
-        - normalized_map: Normalized mapping from supplement names to exchange IDs
-        - normalized_map_mmol: Mapping from supplement names to mmol concentrations
-        - unique_supplements: Set of unique supplement names from the dataframe
-        - normalized_map_upper_bound: Mapping from supplement names to default upper bounds
-
-    Examples
-    --------
-    >>> # Get all three outputs
-    >>> normalized_map, normalized_map_mmol, unique_supplements, normalized_map_upper_bound = build_supplement_mappings(
-    ...     growth_rates_df,
-    ...     supplement_to_exchange_map=mapping,
-    ...     supplement_column="supplements",
-    ...     custom_mapping=None,
-    ...     custom_mapping_file=None,
-    ...     separator=";",
-    ...     include_mmol=True
-    ... )
-    >>>
-    >>> # Skip mmol calculations if not needed
-    >>> normalized_map, _, unique_supplements, normalized_map_upper_bound = build_supplement_mappings(
-    ...     growth_rates_df,
-    ...     supplement_to_exchange_map=mapping,
-    ...     supplement_column="supplements",
-    ...     custom_mapping=None,
-    ...     custom_mapping_file=None,
-    ...     separator=";",
-    ...     include_mmol=False
-    ... )
-    """
-    # Load mappings from YAML file if provided, or use default (done once!)
-    file_mapping: dict[str, dict[str, Any]] = {}
-    if custom_mapping_file is None:
-        # Default to custom_exchange_mapping.yaml in yamls directory
-        default_yaml_path = Path(__file__).parent / "yamls" / "custom_exchange_mapping.yaml"
-        if default_yaml_path.exists():
-            custom_mapping_file = default_yaml_path
-
-    if custom_mapping_file is not None and str(custom_mapping_file).strip():
-        try:
-            import yaml
-
-            yaml_path = Path(custom_mapping_file)
-            if yaml_path.exists():
-                with open(yaml_path, encoding="utf-8") as f:
-                    yaml_data = yaml.safe_load(f)
-                    if yaml_data and "custom_mapping" in yaml_data:
-                        file_mapping = yaml_data["custom_mapping"] or {}
-        except Exception as e:
-            logging.warning(f"Failed to load custom mapping file {custom_mapping_file}: {e}")
-
-    ###########################################################################
-    # Build both mappings simultaneously with precedence: base -> file -> custom
-    normalized_map: dict[str, str] = {}
-    normalized_map_mmol: dict[str, float] = {}
-    normalized_map_upper_bound: dict[str, float] = {}
-
-    # Level 1: Base mapping from supplement_to_exchange_map
-    for k, v in supplement_to_exchange_map.items():
-        if k is None:
-            continue
-        key = k.strip().lower()
-        normalized_map[key] = v
-        # if include_mmol:
-        #     normalized_map_mmol[key] = 0.0
-
-    # Level 2: File mapping (overrides base)
-    for k, v in file_mapping.items():
-        if k is None:
-            continue
-        key = k.strip().lower()
-
-        # Extract exchange_name from nested dict
-        exchange_name: str = v.get("exchange_name") if isinstance(v, dict) else v  # type: ignore
-        if exchange_name:
-            normalized_map[key] = exchange_name
-
-        # Extract and convert mass_per_litre to mmol if requested
-        if include_mmol:
-            mass_per_litre = v.get("mass_per_litre") if isinstance(v, dict) else 0.0
-            if "pubchem_name" in v:
-                molecular_weight = find_molecular_weight(v["pubchem_name"])  # type: ignore
-            elif "pubchem_id" in v:
-                molecular_weight = find_molecular_weight_by_id(v["pubchem_id"])  # type: ignore
-            else:
-                molecular_weight = find_molecular_weight(key)
-            mmol = mg_to_mmol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0  # type: ignore
-            normalized_map_mmol[key] = mmol  # type: ignore
-
-        # Extract default_upper_bound if present
-        if "default_upper_bound" in v and isinstance(v, dict):
-            normalized_map_upper_bound[exchange_name] = float(v["default_upper_bound"])
-        else:
-            normalized_map_upper_bound[exchange_name] = 0.0
-
-    # Level 3: Custom mapping parameter (highest precedence, overrides all)
-    if custom_mapping:
-        for k, v in custom_mapping.items():
-            if k is None:
-                continue
-            key = k.strip().lower()
-
-            # Extract exchange_name from nested dict
-            exchange_name: str = v.get("exchange_name") if isinstance(v, dict) else v  # type: ignore
-            if exchange_name:
-                normalized_map[key] = exchange_name
-
-            # Extract and convert mass_per_litre to mmol if requested
-            if include_mmol:
-                mass_per_litre = v.get("mass_per_litre") if isinstance(v, dict) else 0.0
-                if "pubchem_name" in v:
-                    molecular_weight = find_molecular_weight(v["pubchem_name"])  # type: ignore
-                elif "pubchem_id" in v:
-                    molecular_weight = find_molecular_weight_by_id(v["pubchem_id"])  # type: ignore
-                else:
-                    molecular_weight = find_molecular_weight(key)
-                mmol = mg_to_mmol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0  # type: ignore
-                normalized_map_mmol[key] = mmol  # type: ignore
-
-            # Extract default_upper_bound if present
-            if "default_upper_bound" in v and isinstance(v, dict):
-                normalized_map_upper_bound[exchange_name] = float(v["default_upper_bound"])
-            else:
-                normalized_map_upper_bound[exchange_name] = 0.0
-
-    # Collect unique supplements from the dataframe
-    unique_supplements = set()
-    if supplement_column in growth_rates_df.columns:
-        for val in growth_rates_df[supplement_column].dropna().astype(str):
-            parts = [s.strip() for s in val.split(separator) if s.strip()]
-            for p in parts:
-                unique_supplements.add(p.lower())
-
-    #############################################################################
-    # Map supplements -> exchange reaction ids using exact then fuzzy matching
-    supplement_to_rxn: dict[str, str] = {}
-    unmapped: list[str] = []
-    exact_matches: list[tuple[str, str]] = []
-    fuzzy_matches: list[tuple[str, str, str]] = []  # (supplement, matched_key, reaction)
-    map_keys = list(normalized_map.keys())
-
-    for supp in sorted(unique_supplements):
-        if supp in normalized_map:
-            supplement_to_rxn[supp] = normalized_map[supp]
-            exact_matches.append((supp, normalized_map[supp]))
-            continue
-
-        # Fuzzy match against SBML/manual keys
-        if map_keys:
-            matches = difflib.get_close_matches(supp, map_keys, n=1, cutoff=fuzzy_threshold)
-            if matches:
-                best = matches[0]
-                supplement_to_rxn[supp] = normalized_map[best]
-                fuzzy_matches.append((supp, best, normalized_map[best]))
-                continue
-
-        unmapped.append(supp)
-
-    # Print verbose output if requested
-    if verbose:
-        print("\n" + "=" * 70)
-        print("Supplement to Exchange Reaction Mapping")
-        print("=" * 70)
-
-        if exact_matches:
-            print(f"\nExact matches ({len(exact_matches)}):")
-            for supp, rxn in exact_matches:
-                print(f"  {supp:30s} -> {rxn}")
-
-        if fuzzy_matches:
-            print(f"\nFuzzy matches ({len(fuzzy_matches)}):")
-            for supp, matched_key, rxn in fuzzy_matches:
-                print(f"  {supp:30s} -> {rxn:30s} (matched via '{matched_key}')")
-
-        if unmapped:
-            print(f"\nUnmapped supplements ({len(unmapped)}):")
-            for supp in unmapped:
-                print(f"  {supp}")
-
-        print("\n" + "=" * 70 + "\n")
-
-    # Define all exchange columns: mapped reactions + baseline_exchanges
-    mapped_rxns = sorted(set(supplement_to_rxn.values()))
-    all_exchanges = sorted(set(mapped_rxns + (baseline_exchanges or [])))
-
-    return normalized_map_mmol, normalized_map_upper_bound, all_exchanges, supplement_to_rxn
-
-
-def get_supplement_exchange_dataframe(
-    growth_rates_df: pd.DataFrame,
-    mappings: tuple[dict[str, float], dict[str, float], list[str], dict[str, str]],
-    supplement_column: str = "supplements",
-    growth_rate_column: str = "mu_max",
-    success_column: str = "success",
-    baseline_exchanges: list[str] | None = None,
-    separator: str = ";",
-    exchange_suffix: str | None = None,
-) -> pd.DataFrame:
-    """
-    Create a binary matrix mapping supplements to exchange reactions.
-
-    This function takes a growth rates dataframe (output from fit_modified_gompertz_per_series)
-    and creates a matrix where:
-    - Each row corresponds to a row in the input dataframe
-    - Each column corresponds to an exchange reaction in the metabolic model
-    - Values are 1 if the metabolite is present in supplements, 0 otherwise
-    - The last column contains the growth rate
-
-    Parameters
-    ----------
-    growth_rates_df : pd.DataFrame
-        Output from fit_modified_gompertz_per_series containing growth rates and metadata
-    normalized_map : Dict[str, str]
-        Normalized mapping from supplement names (lowercase) to exchange reaction IDs.
-        Use _build_supplement_mappings() to generate this from raw mappings.
-    unique_supplements : Set[str]
-        Set of unique supplement names (lowercase) found in the dataframe.
-        Use _build_supplement_mappings() to extract this from the dataframe.
-    supplement_column : str
-        Name of the column containing supplement information (default: "supplements")
-    growth_rate_column : str
-        Name of the column containing growth rate values (default: "mu_max")
-    success_column : str
-        Name of the column containing success status (default: "success")
-    baseline_exchanges : Optional[List[str]]
-        List of exchange reactions that are always present (minimal media components).
-        These will be set to 1 for all rows.
-    separator : str
-        Character used to separate multiple supplements in the supplement column (default: ";")
-    exchange_suffix : Optional[str]
-        Optional suffix to append to all exchange reaction column names (default: None).
-        If provided, all exchange columns will have this suffix added, but the growth_rate_column
-        will remain unchanged. Example: exchange_suffix="_input" would rename "EX_glc__D_e"
-        to "EX_glc__D_e_input"
-
-    Returns
-    -------
-    pd.DataFrame
-        Matrix with exchange reactions as columns and growth rate as the last column
-
-    Notes
-    -----
-    - Supplement names are case-insensitive and whitespace is stripped
-    - If exact match fails, fuzzy matching is attempted with configurable threshold
-    - Unmapped supplements trigger a warning with details
-    - Baseline exchanges are always set to 1 for all rows
-    - Growth rate column name is preserved as specified in growth_rate_column parameter
-    """
-    _, _, all_exchanges, supplement_to_rxn = mappings
-    # Build rows
-    rows: list[dict[str, int | float | None]] = []
-
-    for _, row in growth_rates_df.iterrows():
-        # Skip rows where success column exists and is False
-        if success_column in growth_rates_df.columns and not row[success_column]:
-            continue
-
-        r: dict[str, int | float | None] = dict.fromkeys(all_exchanges, 0)
-
-        # baseline -> always 1 if provided
-        if baseline_exchanges:
-            for ex in baseline_exchanges:
-                if ex in r:
-                    r[ex] = 1
-                else:
-                    # if baseline exchange not yet in columns, add it
-                    r[ex] = 1
-
-        # parse supplements for this row
-        supps_val = row.get(supplement_column, None)
-        if pd.notna(supps_val):
-            for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-                rxn = supplement_to_rxn.get(part)
-                if rxn:
-                    # ensure column exists
-                    if rxn not in r:
-                        r[rxn] = 0
-                    r[rxn] = 1
-
-        # add growth rate as final column (preserve column name passed)
-        r[growth_rate_column] = row.get(growth_rate_column, None)
-
-        rows.append(r)
-
-    result_df = pd.DataFrame(rows)
-
-    # ensure baseline columns are present (even if empty)
-    if baseline_exchanges:
-        for ex in baseline_exchanges:
-            if ex not in result_df.columns:
-                result_df[ex] = 1
-
-    # Reorder columns: exchanges sorted, then growth rate last
-    exch_cols = sorted([c for c in result_df.columns if c != growth_rate_column])
-
-    # Apply suffix to exchange columns if requested
-    if exchange_suffix:
-        rename_map = {col: f"{col}{exchange_suffix}" for col in exch_cols}
-        result_df = result_df.rename(columns=rename_map)
-        exch_cols = [f"{col}{exchange_suffix}" for col in exch_cols]
-
-    result_df = result_df[exch_cols + [growth_rate_column]]
-
-    return result_df
-
-
-def get_supplement_flux_dataframe(
-    growth_rates_df: pd.DataFrame,
-    mappings: tuple[dict[str, float], dict[str, float], list[str], dict[str, str]],
-    supplement_column: str = "supplements",
-    growth_rate_column: str = "mu_max",
-    success_column: str = "success",
-    max_od600_column: str = "max_value",
-    max_time_column: str = "max_time",
-    total_volume_column: str = "total_volume_uL",
-    od600_conversion_rate: float = 0.4,
-    baseline_exchanges: list[str] | None = None,
-    separator: str = ";",
-    exchange_suffix: str | None = None,
-) -> pd.DataFrame:
-    """
-    Create a dataframe with mmol/(gCDW h) for supplements mapped to exchange reactions.
-
-    This function is similar to create_supplement_exchange_matrix but returns mmol concentrations
-    instead of binary 0/1 values.
-
-    Parameters
-    ----------
-    growth_rates_df : pd.DataFrame
-        Output from fit_modified_gompertz_per_series containing growth rates and metadata
-    normalized_map : Dict[str, str]
-        Normalized mapping from supplement names (lowercase) to exchange reaction IDs.
-        Use _build_supplement_mappings() to generate this from raw mappings.
-    normalized_map_mmol : Dict[str, float]
-        Mapping from supplement names (lowercase) to mmol concentrations.
-        Use _build_supplement_mmol_mappings() to generate this from raw mappings and mass_per_litre values.
-    unique_supplements : Set[str]
-        Set of unique supplement names (lowercase) found in the dataframe.
-        Use _build_supplement_mappings() to extract this from the dataframe.
-    supplement_column : str
-        Name of the column containing supplement information (default: "supplements")
-    growth_rate_column : str
-        Name of the column containing growth rate values (default: "mu_max")
-    success_column : str
-        Name of the column containing success status (default: "success")
-    baseline_exchanges : Optional[List[str]]
-        List of exchange reactions that are always present (minimal media components)
-    separator : str
-        Character used to separate multiple supplements (default: ";")
-    exchange_suffix : Optional[str]
-        Optional suffix to append to all exchange reaction column names
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with exchange reactions as columns containing mmol concentrations,
-        and growth rate as the last column
-
-    """
-    normalized_map_mmol, normalized_map_upper_bound, all_exchanges, supplement_to_rxn = mappings
-    # Build rows with mmol values
-    rows_mmol: list[dict[str, float]] = []
-
-    for _, row in growth_rates_df.iterrows():
-        # Skip rows where success column exists and is False
-        if success_column in growth_rates_df.columns and not row[success_column]:
-            continue
-
-        r_mmol_per_gCWD_per_time: dict[str, float] = dict.fromkeys(all_exchanges, 0.0)
-
-        # baseline exchanges have 0.0 mmol by default (already set)
-
-        # parse supplements for this row
-        supps_val = row.get(supplement_column, None)
-        if pd.notna(supps_val):
-            for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-                rxn = supplement_to_rxn.get(part)
-                if rxn:
-                    # ensure column exists
-                    if rxn not in r_mmol_per_gCWD_per_time:
-                        r_mmol_per_gCWD_per_time[rxn] = 0.0
-                    # Add mmol value for this supplement
-                    mmol_value = normalized_map_mmol.get(part, 0.0)
-                    max_od = row.get(max_od600_column, 0.0)
-                    max_time = row.get(max_time_column, 0.0)
-                    avg_od600 = max_od / 2
-                    # avg_od600_per_time = avg_od600 / max_time if max_time > 0 else 0.0
-                    gCWD_per_litre = od600_to_gCDW(avg_od600, od600_conversion_rate)  # noqa: N806
-                    gCWD = (
-                        gCWD_per_litre * (row.get(total_volume_column, 1.0) / 1e6)  # convert uL to L  # noqa: N806
-                    )
-                    r_mmol_per_gCWD_per_time[rxn] = mmol_value / (gCWD * max_time) if gCWD > 0 and max_time > 0 else 0.0
-                    if r_mmol_per_gCWD_per_time[rxn] == 0.0 and normalized_map_upper_bound.get(rxn, 0.0) > 0.0:
-                        r_mmol_per_gCWD_per_time[rxn] = normalized_map_upper_bound.get(rxn, 0.0)
-        rows_mmol.append(r_mmol_per_gCWD_per_time)
-
-    result_df_mmol = pd.DataFrame(rows_mmol)
-
-    # ensure baseline columns are present (even if empty)
-    if baseline_exchanges:
-        for ex in baseline_exchanges:
-            if ex not in result_df_mmol.columns:
-                if normalized_map_upper_bound.get(ex, 0.0) > 0.0:
-                    result_df_mmol[ex] = normalized_map_upper_bound.get(ex, 0.0)
-                else:
-                    result_df_mmol[ex] = 0.0
-            else:
-                if result_df_mmol[ex].sum() == 0.0:
-                    result_df_mmol[ex] = normalized_map_upper_bound.get(ex, 0.0)
-
-    # Reorder columns: exchanges sorted, then growth rate last
-    exch_cols = sorted([c for c in result_df_mmol.columns if c != growth_rate_column])
-
-    # Apply suffix to exchange columns if requested
-    if exchange_suffix:
-        rename_map = {col: f"{col}{exchange_suffix}" for col in exch_cols}
-        result_df_mmol = result_df_mmol.rename(columns=rename_map)
-        exch_cols = [f"{col}{exchange_suffix}" for col in exch_cols]
-
-    # Add growth rate column
-    result_df_mmol[growth_rate_column] = growth_rates_df.loc[
-        growth_rates_df[success_column] if success_column in growth_rates_df.columns else growth_rates_df.index,
-        growth_rate_column,
-    ].values
-
-    result_df_mmol = result_df_mmol[exch_cols + [growth_rate_column]]
-
-    return result_df_mmol
 
 
 def parse_sbml_exchanges(sbml_path: str | Path) -> dict[str, str]:
@@ -966,133 +526,6 @@ def _parse_sbml_exchanges_fallback(sbml_path: str | Path) -> dict[str, str]:
                 mapping[name.lower()] = rxn_id
 
     return mapping
-
-
-def create_exchange_bounds_template(
-    exchange_matrix: pd.DataFrame,
-    mappings: tuple[dict[str, float], dict[str, float], list[str], dict[str, str]],
-    growth_rate_column: str = "mu_max",
-    default_level: int = 1,
-    default_max_value: int = 1000,
-    sbml_bounds: dict[str, tuple[int, int]] | None = None,
-    custom_bounds: dict[str, tuple[int, int]] | None = None,
-    exchange_suffix: str | None = None,
-) -> pd.DataFrame:
-    """
-    Create a template dataframe for exchange reaction bounds configuration.
-
-    This function generates a configuration template with predefined values for
-    level, max_value, and ratio_drawing parameters for all exchange reactions
-    in the input matrix (excluding the growth rate column).
-
-    Parameters
-    ----------
-    exchange_matrix : pd.DataFrame
-        Output from create_supplement_exchange_matrix containing exchange reactions
-        as columns and growth rate as the last column
-    growth_rate_column : str
-        Name of the growth rate column to exclude (default: "mu_max")
-    default_level : int
-        Default value for the "level" row (default: 1)
-    default_max_value : int
-        Default value for the "max_value" row (default: 1000)
-    sbml_bounds : Optional[Dict[str, Tuple[int, int]]]
-        Bounds extracted from SBML file using parse_sbml_exchange_bounds().
-        Dictionary mapping exchange reaction IDs to (level, max_value) tuples.
-        Example: {"EX_glc__D_e": (1, 500), "EX_o2_e_i": (1, 2000)}
-        These are used if a column is not in custom_bounds.
-    custom_bounds : Optional[Dict[str, Tuple[int, int]]]
-        Custom bounds for specific exchange reactions (highest priority).
-        Dictionary mapping exchange reaction IDs to (level, max_value) tuples.
-        Example: {"EX_glc__D_e": (2, 500), "EX_o2_e_i": (1, 2000)}
-        Takes precedence over sbml_bounds and defaults.
-
-    Returns
-    -------
-    pd.DataFrame
-        Configuration dataframe with columns:
-        - "name": Row identifier ("level", "max_value", "ratio_drawing")
-        - Exchange reaction columns: Values for each reaction
-
-    Examples
-    --------
-    >>> # Create exchange matrix
-    >>> matrix = create_supplement_exchange_matrix(growth_df, mapping)
-    >>>
-    >>> # Scenario 1: Generate bounds template with defaults
-    >>> bounds = create_exchange_bounds_template(matrix)
-    >>> print(bounds)
-             name  EX_glc__D_e  EX_o2_e_i  ...
-    0       level            1          1  ...
-    1   max_value         1000       1000  ...
-    2  ratio_drawing         0          0  ...
-    >>>
-    >>> # Scenario 2: With custom defaults
-    >>> bounds = create_exchange_bounds_template(
-    ...     matrix,
-    ...     default_level=2,
-    ...     default_max_value=500
-    ... )
-    >>>
-    >>> # Scenario 3: Use SBML bounds
-    >>> sbml_bounds = parse_sbml_exchange_bounds("iML1515.xml")
-    >>> bounds = create_exchange_bounds_template(
-    ...     matrix,
-    ...     sbml_bounds=sbml_bounds
-    ... )
-    >>>
-    >>> # Scenario 4: SBML bounds + custom overrides
-    >>> sbml_bounds = parse_sbml_exchange_bounds("iML1515.xml")
-    >>> custom = {"EX_glc__D_e": (5, 200)}
-    >>> bounds = create_exchange_bounds_template(
-    ...     matrix,
-    ...     sbml_bounds=sbml_bounds,
-    ...     custom_bounds=custom
-    ... )
-
-    Notes
-    -----
-    Precedence order (highest to lowest):
-    1. custom_bounds - User-specified overrides
-    2. sbml_bounds - Bounds from SBML file
-    3. default_level and default_max_value - Fallback defaults
-
-    Default values:
-    - level: 1 (enabled)
-    - max_value: 1000 (upper bound)
-    - ratio_drawing: 0 (no ratio constraint)
-
-    You can modify these values based on your metabolic model requirements.
-    Custom bounds take precedence over SBML bounds, which take precedence over defaults.
-    """
-    _, normalized_map_upper_bound, _, _ = mappings
-    # Get all exchange columns (exclude growth rate column)
-    exchange_cols = [col for col in exchange_matrix.columns if col != growth_rate_column]
-
-    # Create the template dataframe
-    template_data: dict[str, list[str | float]] = {"name": ["level", "max_value", "ratio_drawing"]}
-
-    # Add columns for each exchange reaction with values
-    for col in exchange_cols:
-        trimed_col = col.replace(exchange_suffix if exchange_suffix else "", "")
-        # Precedence: custom_bounds > normalized_map_upper_bound > sbml_bounds > defaults
-        if custom_bounds and col in custom_bounds:
-            # Highest priority: custom bounds
-            level_val, max_val = custom_bounds[col]
-            template_data[col] = [level_val, max_val, 0]
-        elif trimed_col in normalized_map_upper_bound and normalized_map_upper_bound.get(trimed_col, 0.0) > 0.0:
-            # Second priority: Use upper bound from normalized map if available
-            max_val = normalized_map_upper_bound.get(trimed_col, 0)
-            template_data[col] = [default_level, max_val, 0]
-        elif sbml_bounds and col in sbml_bounds:
-            # Third priority: SBML bounds
-            level_val, max_val = sbml_bounds[col]
-            template_data[col] = [level_val, max_val, 0]
-        else:
-            # Lowest priority: default values
-            template_data[col] = [default_level, default_max_value, 0]
-
-    return pd.DataFrame(template_data)
 
 
 def parse_sbml_exchange_bounds(
@@ -1433,215 +866,3 @@ def find_molecular_weight_by_id(
     except Exception as e:
         print(f"Warning: An error occurred while fetching molecular weight for '{compound_id}': {e}")
         return None
-
-
-# def get_supplement_mmol_dataframe(
-#     growth_rates_df: pd.DataFrame,
-#     mappings: tuple[dict[str, str], dict[str, str], set[str], dict[str, float]],
-#     supplement_column: str = "supplements",
-#     growth_rate_column: str = "mu_max",
-#     success_column: str = "success",
-#     baseline_exchanges: list[str] | None = None,
-#     separator: str = ";",
-#     fuzzy_threshold: float = 0.6,
-#     exchange_suffix: str | None = None,
-# ) -> pd.DataFrame:
-#     """
-#     Create a dataframe with mmol concentrations for supplements mapped to exchange reactions.
-
-#     This function is similar to create_supplement_exchange_matrix but returns mmol concentrations
-#     instead of binary 0/1 values.
-
-#     Parameters
-#     ----------
-#     growth_rates_df : pd.DataFrame
-#         Output from fit_modified_gompertz_per_series containing growth rates and metadata
-#     normalized_map : Dict[str, str]
-#         Normalized mapping from supplement names (lowercase) to exchange reaction IDs.
-#         Use _build_supplement_mappings() to generate this from raw mappings.
-#     normalized_map_mmol : Dict[str, float]
-#         Mapping from supplement names (lowercase) to mmol concentrations.
-#         Use _build_supplement_mmol_mappings() to generate this from raw mappings and mass_per_litre values.
-#     unique_supplements : Set[str]
-#         Set of unique supplement names (lowercase) found in the dataframe.
-#         Use _build_supplement_mappings() to extract this from the dataframe.
-#     supplement_column : str
-#         Name of the column containing supplement information (default: "supplements")
-#     growth_rate_column : str
-#         Name of the column containing growth rate values (default: "mu_max")
-#     success_column : str
-#         Name of the column containing success status (default: "success")
-#     baseline_exchanges : Optional[List[str]]
-#         List of exchange reactions that are always present (minimal media components)
-#     separator : str
-#         Character used to separate multiple supplements (default: ";")
-#     fuzzy_threshold : float
-#         Threshold for fuzzy matching of supplement names (default: 0.6)
-#     exchange_suffix : Optional[str]
-#         Optional suffix to append to all exchange reaction column names
-
-#     Returns
-#     -------
-#     pd.DataFrame
-#         DataFrame with exchange reactions as columns containing mmol concentrations,
-#         and growth rate as the last column
-
-#     """
-#     normalized_map, normalized_map_mmol, unique_supplements, _ = mappings
-#     # Map supplements -> exchange reaction ids using exact then fuzzy matching
-#     supplement_to_rxn: dict[str, str] = {}
-#     map_keys = list(normalized_map.keys())
-
-#     for supp in sorted(unique_supplements):
-#         if supp in normalized_map:
-#             supplement_to_rxn[supp] = normalized_map[supp]
-#             continue
-
-#         # Fuzzy match
-#         if map_keys:
-#             matches = difflib.get_close_matches(supp, map_keys, n=1, cutoff=fuzzy_threshold)
-#             if matches:
-#                 best = matches[0]
-#                 supplement_to_rxn[supp] = normalized_map[best]
-#                 continue
-
-#     # Define all exchange columns
-#     mapped_rxns = sorted(set(supplement_to_rxn.values()))
-#     all_exchanges = sorted(set(mapped_rxns + (baseline_exchanges or [])))
-
-#     # Build rows with mmol values
-#     rows_mmol: list[dict[str, float]] = []
-
-#     for _, row in growth_rates_df.iterrows():
-#         # Skip rows where success column exists and is False
-#         if success_column in growth_rates_df.columns and not row[success_column]:
-#             continue
-
-#         r_mmol: dict[str, float] = dict.fromkeys(all_exchanges, 0.0)
-
-#         # baseline exchanges have 0.0 mmol by default (already set)
-
-#         # parse supplements for this row
-#         supps_val = row.get(supplement_column, None)
-#         if pd.notna(supps_val):
-#             for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-#                 rxn = supplement_to_rxn.get(part)
-#                 if rxn:
-#                     # ensure column exists
-#                     if rxn not in r_mmol:
-#                         r_mmol[rxn] = 0.0
-#                     # Add mmol value for this supplement
-#                     mmol_value = normalized_map_mmol.get(part, 0.0)
-#                     r_mmol[rxn] = mmol_value  # type: ignore
-
-#         rows_mmol.append(r_mmol)
-
-#     result_df_mmol = pd.DataFrame(rows_mmol)
-
-#     # ensure baseline columns are present (even if empty)
-#     if baseline_exchanges:
-#         for ex in baseline_exchanges:
-#             if ex not in result_df_mmol.columns:
-#                 result_df_mmol[ex] = 0.0
-
-#     # Reorder columns: exchanges sorted, then growth rate last
-#     exch_cols = sorted([c for c in result_df_mmol.columns if c != growth_rate_column])
-
-#     # Apply suffix to exchange columns if requested
-#     if exchange_suffix:
-#         rename_map = {col: f"{col}{exchange_suffix}" for col in exch_cols}
-#         result_df_mmol = result_df_mmol.rename(columns=rename_map)
-#         exch_cols = [f"{col}{exchange_suffix}" for col in exch_cols]
-
-#     # Add growth rate column
-#     result_df_mmol[growth_rate_column] = growth_rates_df.loc[
-#         growth_rates_df[success_column] if success_column in growth_rates_df.columns else growth_rates_df.index,
-#         growth_rate_column,
-#     ].values
-
-#     result_df_mmol = result_df_mmol[exch_cols + [growth_rate_column]]
-
-#     return result_df_mmol
-
-
-# def get_supplement_mapping(
-#     growth_rates_df: pd.DataFrame,
-#     supplement_to_exchange_map: dict[str, str],
-#     supplement_column: str = "supplements",
-#     separator: str = ";",
-#     fuzzy_threshold: float = 0.6,
-# ) -> dict[str, Any]:
-#     """
-#     Get the supplement->reaction mapping for auditing purposes.
-
-#     This utility function returns the mapping used by create_supplement_exchange_matrix,
-#     including information about exact matches, fuzzy matches, and unmapped supplements.
-
-#     Parameters
-#     ----------
-#     growth_rates_df : pd.DataFrame
-#         Growth rates dataframe containing supplement information
-#     supplement_to_exchange_map : Dict[str, str]
-#         Mapping from supplement names to exchange reaction IDs
-#         Use parse_sbml_exchanges() to extract this from an SBML file
-#     supplement_column : str
-#         Name of the column containing supplement information (default: "supplements")
-#     separator : str
-#         Character used to separate multiple supplements (default: ";")
-#     fuzzy_threshold : float
-#         Threshold for fuzzy matching (default: 0.6)
-
-#     Returns
-#     -------
-#     Dict[str, Dict[str, str]]
-#         Dictionary with three keys:
-#         - "exact_matches": Dict mapping supplements to reactions (exact matches)
-#         - "fuzzy_matches": Dict mapping supplements to reactions with match info
-#         - "unmapped": List of supplements that couldn't be mapped
-
-#     Examples
-#     --------
-#     >>> mapping = parse_sbml_exchanges("iML1515.xml")
-#     >>> mapping_info = get_supplement_mapping(growth_df, mapping)
-#     >>> print("Exact matches:", mapping_info["exact_matches"])
-#     >>> print("Fuzzy matches:", mapping_info["fuzzy_matches"])
-#     >>> print("Unmapped:", mapping_info["unmapped"])
-#     """
-#     # Normalize mapping keys (lowercase, stripped)
-#     normalized_map: dict[str, str] = {}
-#     for k, v in supplement_to_exchange_map.items():
-#         if k is None:
-#             continue
-#         normalized_map[k.strip().lower()] = v
-
-#     # Collect unique supplements from the dataframe
-#     unique_supplements = set()
-#     if supplement_column in growth_rates_df.columns:
-#         for val in growth_rates_df[supplement_column].dropna().astype(str):
-#             parts = [s.strip() for s in val.split(separator) if s.strip()]
-#             for p in parts:
-#                 unique_supplements.add(p.lower())
-
-#     # Map supplements -> exchange reaction ids
-#     exact_matches: dict[str, str] = {}
-#     fuzzy_matches: dict[str, str] = {}
-#     unmapped: list[str] = []
-
-#     map_keys = list(normalized_map.keys())
-
-#     for supp in sorted(unique_supplements):
-#         if supp in normalized_map:
-#             exact_matches[supp] = normalized_map[supp]
-#             continue
-
-#         # Fuzzy match
-#         if map_keys:
-#             matches = difflib.get_close_matches(supp, map_keys, n=1, cutoff=fuzzy_threshold)
-#             if matches:
-#                 best = matches[0]
-#                 fuzzy_matches[supp] = f"{normalized_map[best]} (matched from '{best}')"
-#                 continue
-
-#         unmapped.append(supp)
-
-#     return {"exact_matches": exact_matches, "fuzzy_matches": fuzzy_matches, "unmapped": unmapped}
