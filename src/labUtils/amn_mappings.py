@@ -259,7 +259,7 @@ def build_mappings(
                         file_mapping = yaml_data["custom_mapping"] or {}
         except Exception as e:
             logging.warning(f"Failed to load custom mapping file {custom_mapping_file}: {e}")
-    #################################################################
+    #########
     for name, properties in file_mapping.items():
         if name is None:
             continue
