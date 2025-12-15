@@ -1,0 +1,332 @@
+name,iupac_name,exchange_reaction
+phosphate,,EX_pi_e
+co2 co2,,EX_co2_e
+l-methionine,,EX_met__L_e
+l-methionine sulfoxide,,EX_metsox_S__L_e
+n-acetyl-d-glucosamine,,EX_acgam_e
+cellobiose,,EX_cellb_e
+l-carnitine,,EX_crn_e
+hypoxanthine,,EX_hxan_e
+l-isoleucine,,EX_ile__L_e
+choline c5h14no,,EX_chol_e
+iron (fe3+),,EX_fe3_e
+l-lactate,,EX_lac__L_e
+l-leucine,,EX_leu__L_e
+d-gluconate,,EX_glcn_e
+nitrate,,EX_no3_e
+h+,,EX_h_e
+ornithine,,EX_orn_e
+l-glutamine,,EX_gln__L_e
+l-proline,,EX_pro__L_e
+glycerol,,EX_glyc_e
+d-mannose,,EX_man_e
+adenine,,EX_ade_e
+manganese,,EX_mn2_e
+4-aminobutanoate,,EX_4abut_e
+acetate,,EX_ac_e
+2-oxoglutarate,,EX_akg_e
+l-alanine,,EX_ala__L_e
+l-arginine,,EX_arg__L_e
+l-aspartate,,EX_asp__L_e
+pyruvate,,EX_pyr_e
+succinate,,EX_succ_e
+thymidine c10h14n2o5,,EX_thymd_e
+d-ribose,,EX_rib__D_e
+l-tyrosine,,EX_tyr__L_e
+cytidine,,EX_cytd_e
+deoxycytidine,,EX_dcyt_e
+fumarate,,EX_fum_e
+d-sorbitol,,EX_sbt__D_e
+l-glutamate,,EX_glu__L_e
+guanine,,EX_gua_e
+biotin,,EX_btn_e
+putrescine,,EX_ptrc_e
+spermidine,,EX_spmd_e
+thymine c5h6n2o2,,EX_thym_e
+xanthosine,,EX_xtsn_e
+fe2+ mitochondria,,EX_fe2_e
+d-glucose,,EX_glc__D_e
+allantoin,,EX_alltn_e
+uracil,,EX_ura_e
+l-valine,,EX_val__L_e
+xanthine,,EX_xan_e
+deoxyguanosine,,EX_dgsn_e
+l-arabinose,,EX_arab__L_e
+d-fructose,,EX_fru_e
+d-galactose,,EX_gal_e
+d-xylose,,EX_xyl__D_e
+deoxyuridine,,EX_duri_e
+formate,,EX_for_e
+glycine,,EX_gly_e
+hydrogen,,EX_h2_e
+l-lysine,,EX_lys__L_e
+l-serine,,EX_ser__L_e
+thiamin,,EX_thm_e
+l-tryptophan,,EX_trp__L_e
+deoxyinosine,,EX_din_e
+fmn c17h19n4o9p,,EX_fmn_e
+oxidized glutathione,,EX_gthox_e
+trimethylamine n-oxide,,EX_tmao_e
+acetaldehyde,,EX_acald_e
+melibiose c12h22o11,,EX_melib_e
+sucrose c12h22o11,,EX_sucr_e
+trehalose,,EX_tre_e
+zinc,,EX_zn2_e
+hexadecenoate (n-c16:1),,EX_hdcea_e
+d-lactate,,EX_lac__D_e
+tetradecenoate (n-c14:1),,EX_ttdcea_e
+hydrogen sulfide,,EX_h2s_e
+reduced glutathione,,EX_gthrd_e
+"meso-2,6-diaminoheptanedioate",,EX_26dap__M_e
+n-acetylneuraminate,,EX_acnam_e
+amp c10h12n5o7p,,EX_amp_e
+dihydroxyacetone,,EX_dha_e
+l-fucose,,EX_fuc__L_e
+d-methionine,,EX_met__D_e
+l-tartrate,,EX_tartr__L_e
+taurine c2h7no3s,,EX_taur_e
+maltopentaose,,EX_maltpt_e
+d-glyceraldehyde,,EX_glyald_e
+d-glucuronate,,EX_glcur_e
+nmn c11h14n2o8p,,EX_nmn_e
+urea ch4n2o,,EX_urea_e
+d-fructose 6-phosphate,,EX_f6p_e
+l-rhamnose,,EX_rmn_e
+tetradecanoate (n-c14:0),,EX_ttdca_e
+glycolate c2h3o3,,EX_glyclt_e
+d-glucose 6-phosphate,,EX_g6p_e
+2-dehydro-3-deoxy-d-gluconate,,EX_2ddglcn_e
+s-methyl-l-methionine,,EX_mmet_e
+d-galactarate,,EX_galct__D_e
+l-idonate,,EX_idon__L_e
+indole,,EX_indole_e
+3-hydroxycinnamic acid,,EX_3hcinnm_e
+acetoacetate,,EX_acac_e
+n-acetyl-d-mannosamine,,EX_acmana_e
+d-galacturonate,,EX_galur_e
+adenosine,,EX_adn_e
+inosine,,EX_ins_e
+magnesium,,EX_mg2_e
+glycerol 3-phosphate,,EX_glyc3p_e
+butyrate (n-c4:0),,EX_but_e
+lactose c12h22o11,,EX_lcts_e
+octadecanoate (n-c18:0),,EX_ocdca_e
+cob(i)alamin,,EX_cbl1_e
+nicotinate,,EX_nac_e
+deoxyadenosine,,EX_dad_2_e
+d-serine,,EX_ser__D_e
+d-glucosamine 6-phosphate,,EX_gam6p_e
+"1,5-diaminopentane",,EX_15dap_e
+octadecenoate (n-c18:1),,EX_ocdcea_e
+cyanate,,EX_cynt_e
+d-galactonate,,EX_galctn__D_e
+glycine betaine,,EX_glyb_e
+calcium,,EX_ca2_e
+sulfite,,EX_so3_e
+l-ascorbate,,EX_ascb__L_e
+beta-alanine,,EX_ala_B_e
+agmatine,,EX_agm_e
+myo-inositol hexakisphosphate,,EX_minohp_e
+phosphonate,,EX_ppt_e
+hexanoate (n-c6:0),,EX_hxa_e
+l-lyxose,,EX_lyx__L_e
+n-acetylmuramate,,EX_acmum_e
+decanoate (n-c10:0),,EX_dca_e
+d-allose,,EX_all__D_e
+octanoate (n-c8:0),,EX_octa_e
+gamma-butyrobetaine,,EX_gbbtn_e
+l-xylulose,,EX_xylu__L_e
+gdp c10h12n5o11p2,,EX_gdp_e
+gtp c10h12n5o14p3,,EX_gtp_e
+trimethylamine,,EX_tma_e
+d-fructuronate,,EX_fruur_e
+maltotriose c18h32o16,,EX_malttr_e
+cobinamide,,EX_cbi_e
+aerobactin,,EX_arbtn_fe3_e
+coprogen,,EX_cpgn_e
+methane,,EX_ch4_e
+adenosylcobalamin,,EX_adocbl_e
+propionate (n-c3:0),,EX_ppa_e
+nickel,,EX_ni2_e
+nitric oxide,,EX_no_e
+flavin adenine dinucleotide oxidized,,EX_fad_e
+methanol,,EX_meoh_e
+fe(iii)dicitrate,,EX_fe3dcit_e
+fe(iii)hydroxamate,,EX_fe3hox_e
+ferrichrome,,EX_fecrm_e
+fe-enterobactin,,EX_feenter_e
+generic ferrioxamine-fe-iii,,EX_feoxam_e
+3  amp c10h12n5o7p,,EX_3amp_e
+guanosine 3  phosphate c10h12n5o8p,,EX_3gmp_e
+3  ump c9h11n2o9p,,EX_3ump_e
+copper,,EX_cu2_e
+(r)-glycerate,,EX_glyc__R_e
+(enterobacterial common antigen)x4 core oligosaccharide lipid a,,EX_eca4colipa_e
+d-malate,,EX_mal__D_e
+selenate,,EX_sel_e
+mercury  charged 2  hg,,EX_hg2_e
+co2+,,EX_cobalt2_e
+protoheme c34h30fen4o4,,EX_pheme_e
+methanesulfonate,,EX_mso3_e
+"2',3'-cyclic amp",,EX_23camp_e
+"2',3'-cyclic gmp",,EX_23cgmp_e
+"2',3'-cyclic ump",,EX_23cump_e
+sulfoacetate,,EX_sulfac_e
+butanesulfonate,,EX_butso3_e
+ethanesulfonate,,EX_ethso3_e
+tyramine,,EX_tym_e
+imp c10h11n4o8p,,EX_imp_e
+"fe(iii)hydoxamate, unloaded",,EX_fe3hox_un_e
+"2,3-diaminopropionate",,EX_23dappa_e
+cadmium,,EX_cd2_e
+enterochelin,,EX_enter_e
+ferrichrome minus fe(iii),,EX_fecrm_un_e
+cys gly c5h10n2o3s,,EX_cgly_e
+"n,n'-diacetylchitobiose",,EX_chtbs_e
+gmp c10h12n5o8p,,EX_gmp_e
+hydrogen peroxide,,EX_h2o2_e
+ump c9h11n2o9p,,EX_ump_e
+pyridoxamine,,EX_pydam_e
+fructoselysine,,EX_frulys_e
+phosphoethanolamine kdo(2)-lipid (a),,EX_enlipa_e
+hepta-acylated core oligosaccharide lipid a (e. coli),,EX_hacolipa_e
+ethanolamine,,EX_etha_e
+hexadecanoate (n-c16:0),,EX_hdca_e
+d-glucarate,,EX_glcr_e
+h2o h2o,,EX_h2o_e
+d-alanine,,EX_ala__D_e
+d-mannitol,,EX_mnl_e
+maltose c12h22o11,,EX_malt_e
+(r)-pantothenate,,EX_pnto__R_e
+l-asparagine,,EX_asn__L_e
+citrate,,EX_cit_e
+l-malate,,EX_mal__L_e
+nitrite,,EX_no2_e
+d-glucosamine,,EX_gam_e
+myo-inositol,,EX_inost_e
+molybdate,,EX_mobd_e
+sulfate,,EX_so4_e
+l-phenylalanine,,EX_phe__L_e
+l-threonine,,EX_thr__L_e
+uridine,,EX_uri_e
+ammonium,,EX_nh4_e
+dodecanoate (n-c12:0),,EX_ddca_e
+alpha-d-ribose 5-phosphate,,EX_r5p_e
+glycerol 2-phosphate,,EX_glyc2p_e
+hepta-acylated kdo(2)-lipid (a),,EX_halipa_e
+cmp c9h12n3o8p,,EX_cmp_e
+maltohexaose,,EX_malthx_e
+cytosine,,EX_csn_e
+ethanol,,EX_etoh_e
+sn-glycero-3-phosphoethanolamine,,EX_g3pe_e
+phenylacetaldehyde,,EX_pacald_e
+l-histidine,,EX_his__L_e
+potassium,,EX_k_e
+sodium,,EX_na1_e
+dimethyl sulfoxide,,EX_dmso_e
+"(s)-propane-1,2-diol",,EX_12ppd__S_e
+phenylpropanoate,,EX_pppn_e
+n-acetyl-d-glucosamine 1-phosphate,,EX_acgam1p_e
+galactitol,,EX_galt_e
+d-glucuronate 1-phosphate,,EX_glcur1p_e
+l-threonine o-3-phosphate,,EX_thrp_e
+formaldehyde,,EX_fald_e
+pyridoxine,,EX_pydxn_e
+n-acetyl-d-galactosamine,,EX_acgal_e
+sulfur dioxide,,EX_so2_e
+dimethyl sulfide,,EX_dms_e
+n-acetyl-d-galactosamine 1-phosphate,,EX_acgal1p_e
+hydrogen cyanide,,EX_cyan_e
+phosphotyrosine,,EX_tyrp_e
+udp-n-acetyl-d-glucosamine,,EX_uacgam_e
+udp-n-acetyl-d-galactosamine,,EX_udpacgal_e
+udpglucose,,EX_udpg_e
+udpgalactose,,EX_udpgal_e
+udp-d-glucuronate,,EX_udpglcur_e
+"1,4-alpha-d-glucan",,EX_14glucan_e
+o-phospho-l-serine,,EX_pser__L_e
+xanthosine 5'-phosphate,,EX_xmp_e
+damp c10h12n5o6p,,EX_damp_e
+dimp c10h12n4o7p,,EX_dimp_e
+isethionic acid,,EX_isetac_e
+arsenite,,EX_aso3_e
+thiocyanate,,EX_tcynt_e
+"ferric 2,3-dihydroxybenzoylserine",,EX_fe3dhbzs_e
+ferroxamine minus fe(3),,EX_feoxam_un_e
+sn-glycero-3-phosphocholine,,EX_g3pc_e
+glycerophosphoglycerol,,EX_g3pg_e
+sn-glycero-3-phospho-1-inositol,,EX_g3pi_e
+glycerophosphoserine,,EX_g3ps_e
+phenethylamine,,EX_peamn_e
+"3,4-dihydroxyphenylacetaldehyde",,EX_34dhpac_e
+l-cysteine,,EX_cys__L_e
+guanosine,,EX_gsn_e
+orotate c5h3n2o4,,EX_orot_e
+2(alpha-d-mannosyl)-d-glycerate,,EX_manglyc_e
+l-methionine-r-sulfoxide,,EX_metsox_R__L_e
+chloride,,EX_cl_e
+dgmp c10h12n5o7p,,EX_dgmp_e
+4-hydroxyphenylacetaldehyde,,EX_4hoxpacd_e
+3-(3-hydroxy-phenyl)propionate,,EX_3hpppn_e
+d-mannose 6-phosphate,,EX_man6p_e
+thiosulfate,,EX_tsul_e
+nitrous oxide,,EX_n2o_e
+maltotetraose,,EX_maltttr_e
+d-alanyl-d-alanine,,EX_alaala_e
+dtmp c10h13n2o8p,,EX_dtmp_e
+lipoate,,EX_lipoate_e
+pyridoxal,,EX_pydx_e
+d-glucose 1-phosphate,,EX_g1p_e
+o2 o2,,EX_o2_e
+l-prolinylglycine,,EX_progly_e
+beta d-galactose,,EX_gal_bD_e
+dump c9h11n2o8p,,EX_dump_e
+"(r)-propane-1,2-diol",,EX_12ppd__R_e
+superoxide anion,,EX_o2s_e
+alpha-d-galactose 1-phosphate,,EX_gal1p_e
+dcmp c9h12n3o7p,,EX_dcmp_e
+"2',3'-cyclic cmp",,EX_23ccmp_e
+3  cmp c9h12n3o8p,,EX_3cmp_e
+urate c5h4n4o3,,EX_urate_e
+shikimate,,EX_skm_e
+coprogen unloaded (no fe(iii)),,EX_cpgn_un_e
+silver,,EX_ag_e
+d-cysteine,,EX_cys__D_e
+o-acetyl-l-serine,,EX_acser_e
+cu+,,EX_cu_e
+aerobactin minus fe3,,EX_arbtn_e
+dopamine,,EX_dopa_e
+d-tartrate,,EX_tartr__D_e
+l-galactonate,,EX_galctn__L_e
+l-homoserine,,EX_hom__L_e
+tungstate,,EX_tungs_e
+d-carnitine,,EX_crn__D_e
+"l-alanine-d-glutamate-meso-2,6-diaminoheptanedioate-d-alanine",,EX_LalaDgluMdapDala_e
+5-dehydro-d-gluconate,,EX_5dglcn_e
+"l-alanine-d-glutamate-meso-2,6-diaminoheptanedioate",,EX_LalaDgluMdap_e
+psicoselysine,,EX_psclys_e
+n-acetyl-d-glucosamine(anhydrous)n-acetylmuramic acid,,EX_anhgm_e
+propanal,,EX_ppal_e
+selenite,,EX_slnt_e
+l-alanine-d-glutamate,,EX_LalaDglu_e
+5-methylthio-d-ribose,,EX_5mtr_e
+l-alanine-l-glutamate,,EX_LalaLglu_e
+tetracycline,,EX_ttrcyc_e
+minocycline,,EX_mincyc_e
+arbutin c12h16o7,,EX_arbt_e
+d-xylonate,,EX_dxylnt_e
+"(2r,4s)-2-methyl-2,3,3,4-tetrahydroxytetrahydrofuran",,EX_mththf_e
+doxorubicin,,EX_doxrbcn_e
+"2,3-dihydroxypropane-1-sulfonate",,EX_dhps_e
+cesium ion,,EX_cs1_e
+fusidic acid,,EX_fusa_e
+methylphosphonic acid,,EX_mepn_e
+chloramphenicol,,EX_cm_e
+novobiocin,,EX_novbcn_e
+2 deoxy d glucose c6h12o5,,EX_2dglc_e
+sulphoquinovose,,EX_sq_e
+4-aminobenzoyl-glutamate,,EX_4abzglu_e
+rifampin,,EX_rfamp_e
+1-o-methyl-beta-d-glucuronate,,EX_metglcur_e
+quinate,,EX_quin_e
+3-hydroxypropanoate,,EX_3hpp_e

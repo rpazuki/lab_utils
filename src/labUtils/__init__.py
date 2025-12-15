@@ -10,6 +10,6 @@ __all__ = [
     "parse_sbml_exchanges",
     "_parse_sbml_exchanges_fallback",
     "parse_sbml_exchange_bounds",
-    "load_default_iml1515_mapping",
     "load_minimal_media_exchanges",
+    "load_default_iml1515_mapping",
 ]

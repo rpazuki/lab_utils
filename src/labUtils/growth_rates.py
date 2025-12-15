@@ -7,6 +7,7 @@
 #  License: MIT                                              #
 ##############################################################
 
+import logging
 from math import e
 from pathlib import Path
 from typing import Any
@@ -664,5 +665,5 @@ def plot_and_save(
         else:
             filepath = filename
         plt.savefig(filepath, dpi=300, bbox_inches="tight")
-        print(f"Saved plot: {filepath}")
+        logging.info(f"Saved plot: {filepath}")
         plt.close()  # Close figure to free memory

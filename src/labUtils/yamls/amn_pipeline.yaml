@@ -27,37 +27,8 @@ pipelines:
                     growth_rates_df: growth_data # The 'growth_data' input defined above
                     supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
                     supplement_column: supplements # The column name for OD values in output dataframe
+                    halt_on_not_found: false
                     verbose: true
-                    fixed_exchanges: #
-                        - EX_pi_e
-                        - EX_co2_e #
-                        - EX_fe3_e
-                        - EX_h_e #
-                        - EX_pro__L_e
-                        - EX_glyc_e
-                        - EX_mn2_e
-                        - EX_ala__L_e
-                        - EX_fe2_e
-                        - EX_gal_e # !!!!!
-                        - EX_gly_e #
-                        - EX_zn2_e
-                        - EX_mg2_e
-                        - EX_ca2_e
-                        - EX_ni2_e
-                        - EX_cu2_e
-                        - EX_sel_e
-                        - EX_cobalt2_e
-                        - EX_h2o_e #
-                        - EX_mobd_e
-                        - EX_so4_e
-                        - EX_thr__L_e
-                        # - EX_nh4_e #
-                        - EX_k_e #
-                        # - EX_na1_e
-                        # - EX_cl_e
-                        - EX_o2_e #
-                        - EX_tungs_e
-                        - EX_slnt_e
             - df_flux:
                 package: labUtils.amn_mappings
                 method: build_supplement_flux_dataframe

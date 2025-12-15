@@ -8,7 +8,6 @@
 
 import difflib
 import logging
-import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -18,9 +17,7 @@ import pandas as pd
 from labUtils.utils import (
     find_molecular_weight,
     find_molecular_weight_by_id,
-    get_compound_by_id,
     get_compound_by_name,
-    ions_from_smiles,
     mg_to_mmol,
     od600_to_gCDW,
 )
@@ -36,29 +33,45 @@ class MediumSource(Enum):
     FIXED = "fixed"
 
 
+class RecordOrigin(Enum):
+    SMBL = "smbl"
+    UPDATED = "updated"
+
+
+# The way that a row was found in the mapping
+class SearchResult(Enum):
+    NAME = "name"
+    IUPAC = "iupac"
+    FUZZY_NAME = "fuzzy_name"
+    FUZZY_IUPAC = "fuzzy_iupac"
+    NOT_FOUND = "not_found"
+
+
 def build_mappings(
     growth_rates_df: pd.DataFrame,
     supplement_to_exchange_map: dict[str, str],
     supplement_column: str,
     custom_mapping_file: str | Path | None = None,
     custom_mapping: dict[str, str | dict[str, Any]] | None = None,
-    fixed_exchanges: list[str] | None = None,
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
+    halt_on_not_found: bool = False,
     verbose: bool = False,
 ) -> pd.DataFrame:
-    ###########################################################################
+    # ===================================================================================
     ## Level 1: Base mapping from supplement_to_exchange_map
     # Create a dataframe from organism's supplement to exchange mapping
     supp_exchange = (
         (
             supp.strip().lower(),
             "",
+            set(),
             exchange,
             0.0,  # mass_per_litre_mg
             0.0,  # mmol_concentration
             0.0,  # flux_upper_bound
             MediumSource.UNSTATED.value,
+            RecordOrigin.SMBL.value,
         )
         for supp, exchange in supplement_to_exchange_map.items()
         if supp is not None
@@ -69,144 +82,182 @@ def build_mappings(
         columns=[
             "name",
             "iupac_name",
+            "other_names",
             "exchange_reaction",
             "mass_per_litre",
             "mmol_concentration",
             "flux_upper_bound",
             "source",
+            "record_origin",
         ],
     )
-    #############################################################################
-    # Collect unique supplements from the dataframe
-    unique_supplements = set()
-    if supplement_column in growth_rates_df.columns:
-        for val in growth_rates_df[supplement_column].dropna().astype(str):
-            parts = [s.strip() for s in val.split(separator) if s.strip()]
-            for p in parts:
-                unique_supplements.add(p.lower())
 
-    def find_in_df_mapping(df_mapping, name: str) -> tuple[pd.DataFrame, bool]:
+    # ===================================================================================
+    def alert(msg: str, halt_on_error: bool = True):
+        if halt_on_error:
+            logging.error(msg)
+            raise ValueError(msg)
+        if verbose:
+            # warnings.warn((msg), stacklevel=2)
+            logging.warning(msg)
+        else:
+            logging.info(msg)
+
+    # ===================================================================================
+    def search_by_name_in_df_mapping(df_mapping, row) -> tuple[pd.DataFrame, SearchResult]:
+        # Search the row by its name, iupac_name, or fuzzy matching
+        # Level 1: Try name
+        name = row["name"]
         df = df_mapping.loc[df_mapping["name"] == name, :]
         if not df.empty:
-            return df, True
-        df = df_mapping.loc[df_mapping["iupac_name"] == name, :]
-        if not df.empty:
-            return df, False
-        return pd.DataFrame(), False
+            return df, SearchResult.NAME
+        # Level 2: Try iupac_name
+        iupac_name = row["iupac_name"].strip()
+        if iupac_name != "":
+            df = df_mapping.loc[df_mapping["iupac_name"] == iupac_name, :]
+            if not df.empty:
+                return df, SearchResult.IUPAC
+        # Level 3: Try fuzzy matching
+        map_keys = list(df_mapping["name"].values)
+        # names vs names
+        matches = difflib.get_close_matches(name, map_keys, n=1, cutoff=fuzzy_threshold)
+        if matches:
+            best = matches[0]
+            return df_mapping.loc[df_mapping["name"] == best, :], SearchResult.FUZZY_NAME
+        # names vs iupac_names
+        if iupac_name != "":
+            matches = difflib.get_close_matches(iupac_name, map_keys, n=1, cutoff=fuzzy_threshold)
+            if matches:
+                best = matches[0]
+                return df_mapping.loc[df_mapping["name"] == best, :], SearchResult.FUZZY_NAME
 
-    def update_mapping_df(df_mapping, row):
-        # Update or append to df_mapping
-        existing_idx, found_by_name = find_in_df_mapping(df_mapping, row["name"])
-        if not existing_idx.empty:
-            if not found_by_name:
-                original_name = existing_idx["name"].values[0]
-                iupac_name = row["name"]
-                row["name"] = original_name
-                row["iupac_name"] = iupac_name
-            df_mapping.loc[existing_idx.index[0]] = row
-            #     print("=" * 50)
-            #     print(f" Updated mapping by name for '{row}'.")
-            #     print("=" * 50)
-            # elif row["iupac_name"] != "":
-            existing_idx, found_by_name = find_in_df_mapping(df_mapping, row["iupac_name"])
-            if not existing_idx.empty:
-                if found_by_name:
-                    original_name = existing_idx["name"].values[0]
-                    row["name"] = original_name
-                df_mapping.loc[existing_idx.index[0]] = row
-                # print("=" * 50)
-                # print(f" Updated mapping by iupac name for '{row}'.")
-                # print("=" * 50)
+        # iupac_names vs iupac_names
+        map_keys = list(df_mapping["iupac_name"].values)
+        if iupac_name != "":
+            matches = difflib.get_close_matches(iupac_name, map_keys, n=1, cutoff=fuzzy_threshold)
+            if matches:
+                best = matches[0]
+                return df_mapping.loc[df_mapping["iupac_name"] == best, :], SearchResult.FUZZY_IUPAC
+        # iupac_names vs names
+        matches = difflib.get_close_matches(name, map_keys, n=1, cutoff=fuzzy_threshold)
+        if matches:
+            best = matches[0]
+            return df_mapping.loc[df_mapping["name"] == best, :], SearchResult.FUZZY_IUPAC
+
+        return pd.DataFrame(), SearchResult.NOT_FOUND
+
+    def update_mapping_df_by_row(df_mapping, row, halt_on_not_found: bool = True):
+        def set_entire_row(df_mapping, new_row):
+            # update the entire row
+            df_mapping.loc[existing_rows.index[0]] = new_row
+            return df_mapping
+
+        def add_new_row(df_mapping, new_row):
+            df_mapping = pd.concat([df_mapping, pd.DataFrame([new_row])], ignore_index=True)
+            return df_mapping
+
+        def update_row_by_existing(row, existing_row):
+            row["other_names"] |= {row["name"], row["iupac_name"]}
+            row["other_names"] = {item for item in row["other_names"] if item != ""}
+            row["name"] = existing_row["name"]
+            row["iupac_name"] = existing_row["iupac_name"]
+            row["exchange_reaction"] = existing_row["exchange_reaction"]
+            return row
+
+        # The df_mapping contains all exchange_reactions of the organism. So,
+        # there should be at least one in them that matches the new row.
+        # After making sure there is one, based on the name search, we decide how to update it.
+        #
+        #
+        # Check the exchange_reactions existing in the df_mapping
+        if (
+            row["exchange_reaction"].strip() != ""
+            and df_mapping.loc[df_mapping["exchange_reaction"] == row["exchange_reaction"]].empty
+        ):
+            alert(
+                f"There is no exchange reaction:'{row['exchange_reaction']}' in the organism. "
+                f"This is occured for mapping element:'{row['name']}' (iupac name:'{row['iupac_name']}'). ",
+                halt_on_not_found,
+            )
+            # If the exchange reaction is not found, we cannot proceed.
+            return df_mapping
+        # When exchange reaction exists, update if the name matches,
+        # otherwise, add it as a new record.
+        if row["exchange_reaction"].strip() != "":
+            existing_rows, search_result = search_by_name_in_df_mapping(df_mapping, row)
+            if existing_rows.empty or search_result in {
+                SearchResult.NOT_FOUND,
+                SearchResult.FUZZY_NAME,
+                SearchResult.FUZZY_IUPAC,
+            }:
+                df_mapping = add_new_row(df_mapping, row)
+                return df_mapping
             else:
-                df_mapping = pd.concat([df_mapping, pd.DataFrame([row])], ignore_index=True)
-                # print("=" * 50)
-                # print(f" Add mapping for '{row}'.")
-                # print("=" * 50)
-        else:
-            df_mapping = pd.concat([df_mapping, pd.DataFrame([row])], ignore_index=True)
-            # print("=" * 50)
-            # print(f" Add mapping for '{row}'.")
-            # print("=" * 50)
+                if existing_rows.shape[0] > 1:
+                    alert(
+                        f"Multiple existing rows found for name:'{row['name']}' (iupac_name:'{row['iupac_name']}'). Using the first one.",
+                        halt_on_error=False,
+                    )
+                existing_row = existing_rows.iloc[0]
+                row = update_row_by_existing(row, existing_row)
+                df_mapping = set_entire_row(df_mapping, row)
+                return df_mapping
+
+        ###############################################################
+        #       Search by name, iupac_name, or fuzzy matching
+        existing_rows, search_result = search_by_name_in_df_mapping(df_mapping, row)
+
+        if existing_rows.empty and row["exchange_reaction"].strip() == "":
+            alert(
+                f"Could not found a match for name:'{row['name']}' (iupac_name:'{row['iupac_name']}').",
+                halt_on_error=halt_on_not_found,
+            )
+            return df_mapping
+        elif existing_rows.empty:  # Empty means not found, so, add new row
+            return add_new_row(df_mapping, row)
+        # there is at least one existing row
+        if existing_rows.shape[0] > 1:
+            alert(
+                f"Multiple existing rows found for name:'{row['name']}' (iupac_name:'{row['iupac_name']}'). Using the first one.",
+                halt_on_error=False,
+            )
+        existing_row = existing_rows.iloc[0]
+        match search_result:
+            # If there is a match by name or iupac_name, replace it by the new row.
+            # However, there exchange_reaction must be the same, otherwise, it is a mistake in the mapping.
+            case SearchResult.NAME | SearchResult.IUPAC:
+                if verbose:
+                    alert(
+                        f"exact match found for name:'{row['name']}' (iupac_name:'{row['iupac_name']}') to "
+                        f"existing mapping name:'{existing_row['name']}', iupac_name:'{existing_row['iupac_name']}', exchange reaction:'{existing_row['exchange_reaction']}'.",
+                        halt_on_error=False,
+                    )
+                row = update_row_by_existing(row, existing_row)
+                df_mapping = set_entire_row(df_mapping, row)
+            case SearchResult.FUZZY_NAME | SearchResult.FUZZY_IUPAC:
+                alert(
+                    f"fuzzy match found for name:'{row['name']}' (iupac_name:'{row['iupac_name']}') to "
+                    f"existing mapping name:'{existing_row['name']}', iupac_name:'{existing_row['iupac_name']}', exchange reaction:'{existing_row['exchange_reaction']}'.",
+                    halt_on_error=False,
+                )
+                row = update_row_by_existing(row, existing_row)
+                df_mapping = set_entire_row(df_mapping, row)
+            case SearchResult.NOT_FOUND:
+                alert(
+                    f"Could not found a match for name:'{row['name']}' (iupac_name:'{row['iupac_name']}').",
+                    halt_on_error=halt_on_not_found,
+                )
         return df_mapping
 
-    def create_new_rows_for_salts(df_mapping, salt_name, properties):
-        rows = []
-        salt_name = salt_name.strip().lower()
-        if properties.get("pubchem_name", None):
-            compound = get_compound_by_name(properties["pubchem_name"])  # type: ignore
-        elif properties.get("pubchem_id", None):
-            compound = get_compound_by_id(properties["pubchem_id"])  # type: ignore
-        elif salt_name:
-            compound = get_compound_by_name(salt_name)
-        else:
-            raise ValueError(f"The exchange name:'{salt_name}' is marked as salt but no valid name or ID was provided.")
-        compound_smiles: str = compound.smiles  # type: ignore
-        #
-        compounds = ions_from_smiles(compound_smiles)
-        if verbose:
-            print(f"\nProcessing salt '{salt_name}' with SMILES:'{compound_smiles}' into ions:")
-            for ion in compounds:
-                print(f"  Ion: {ion}")
-
-        # assert len(compounds) == len(properties.get("exchange_name", [])), "Mismatch between ions and exchange names"
-        total_molar_mass = sum(ion["molar_mass"] for ion in compounds)
-        for ion_info in compounds:
-            # ion_name = ion_info["smiles_component"]
-            # there are two iupac names obtained from PubChem: iupac_name & iupac_name_secondary
-            # We first lookup the exsiting names in the df_mapping. If any one of them exist, use it.
-            # Otherwise, we use the iupac_name from ion_info
-            iupac_name = ion_info["iupac_name"]
-            df, _ = find_in_df_mapping(df_mapping, iupac_name)
-            if not df.empty:
-                ion_name = iupac_name
-                ion_exchange = df["exchange_reaction"].values[0]
-            else:
-                iupac_name_secondary = ion_info.get("iupac_name_secondary", "Unknown")
-                df, _ = find_in_df_mapping(df_mapping, iupac_name_secondary)
-                if not df.empty:
-                    ion_name = iupac_name_secondary
-                    ion_exchange = df["exchange_reaction"].values[0]
-                else:
-                    # ion_name = ion_info["smiles_component"]
-                    raise ValueError(
-                        f"Could not find ion name:'{iupac_name}' or "
-                        f"its iupac name '{iupac_name_secondary}' for salt '{salt_name}' in mapping dataframe."
-                    )
-
-            ratio = ion_info["molar_mass"] / total_molar_mass if total_molar_mass > 0 else 0.0
-            pubchem_cid = ion_info.get("pubchem_cid", None)
-            # copy the properties to avoid modifying the original
-            row_properties = properties.copy()
-            # Adjust mass_per_litre based on ratio
-            mass_per_litre = properties.get("mass_per_litre", 0.0)
-            row_properties["mass_per_litre"] = float(mass_per_litre) * ratio  # type: ignore
-            row_properties["name"] = ion_name.strip().lower()
-            # row_properties["exchange_name"] = ion_exchange
-            row_properties["exchange_name"] = ion_exchange
-            if pubchem_cid is not None:
-                row_properties["pubchem_id"] = pubchem_cid
-            row = create_new_row(ion_name, row_properties)
-            rows.append(row)
-
-        if verbose:
-            print("=" * 100)
-            print(f" Created mapping for salt '{salt_name}'")
-            for r in rows:
-                print(f"   ion '{r['name']}': {r}")
-            print("=" * 100)
-        return rows
-
-    def create_new_row(supp, properties):
-        row = {"name": supp.strip().lower()}
+    def create_new_row(name, properties):
+        row = {"name": name.strip().lower()}
         # Extract exchange_name from nested dict
-        exchange_name: str = properties.get("exchange_name") if isinstance(properties, dict) else None  # type: ignore
-        if exchange_name:
-            row["exchange_reaction"] = exchange_name
-        else:
-            raise ValueError(f"Missing exchange_name for '{supp}' in file mapping '{str(custom_mapping_file)}'.")
-
+        exchange_name: str = properties.get("exchange_name", "")
+        row["exchange_reaction"] = exchange_name
         # Extract iupac_name
         row["iupac_name"] = properties.get("iupac_name", "")
+        # other names
+        row["other_names"] = set(properties.get("other_names", []))
         # Extract and convert mass_per_litre to mmol if requested
         mass_per_litre = properties.get("mass_per_litre") if isinstance(properties, dict) else 0.0
         row["mass_per_litre"] = float(mass_per_litre)  # type: ignore
@@ -214,6 +265,8 @@ def build_mappings(
             molecular_weight = find_molecular_weight(properties["pubchem_name"])  # type: ignore
         elif "pubchem_id" in properties:
             molecular_weight = find_molecular_weight_by_id(properties["pubchem_id"])  # type: ignore
+        elif "iupac_name" in properties and properties["iupac_name"] != "":
+            molecular_weight = find_molecular_weight(properties["iupac_name"])  # type: ignore
         else:
             molecular_weight = find_molecular_weight(row["name"])
         mmol = mg_to_mmol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0  # type: ignore
@@ -225,22 +278,97 @@ def build_mappings(
         else:
             row["flux_upper_bound"] = 0.0  # type: ignore
 
-        # update source. unique_supplements from metadata has precedence
-        # over file/custom mapping. The default is UNSTATED
-        if row["name"] in unique_supplements:
-            row["source"] = MediumSource.SUPPLEMENT.value
-        elif "source" in properties:
+        if "source" in properties:
             row["source"] = str(properties["source"])  # type: ignore
         else:
             row["source"] = MediumSource.UNSTATED.value
 
+        # set record_origin
+        row["record_origin"] = RecordOrigin.UPDATED.value
+
         return row
 
-    ############################################################################
+    def create_new_rows_for_compounds(df_mapping, compound_name, properties):
+        rows = []
+        compound_name = compound_name.strip().lower()
+        if len(properties.get("compounds", [])) == 0:
+            raise ValueError(
+                f"The exchange name:'{compound_name}' is marked as compound but no compounds were provided."
+            )
+        compounds = []
+        for subcompound in properties.get("compounds", []):
+            df = df_mapping.loc[(df_mapping["name"] == subcompound) | (df_mapping["iupac_name"] == subcompound), :]
+            if df.empty:
+                alert(
+                    f"Could not find compound name:'{subcompound}' for compound '{compound_name}' in mappings.",
+                    halt_on_error=halt_on_not_found,
+                )
+                continue
+            if df.shape[0] > 1:
+                alert(
+                    f"Multiple entries found for compound name:'{subcompound}' for compound '{compound_name}'. Using the first one.",
+                    halt_on_error=False,
+                )
+            existing_row = df.iloc[0]
+            if existing_row["iupac_name"]:
+                compound = get_compound_by_name(existing_row["iupac_name"])
+            elif existing_row["name"]:
+                compound = get_compound_by_name(existing_row["name"])
+            else:
+                raise ValueError(
+                    f"The exchange name:'{existing_row['name']}' is marked as compound but no valid name or ID was provided for searching pubchem db."
+                )
+
+            compounds.append({"compound": compound, "mapping_row": existing_row})
+
+        # total_molar_mass = sum(info["molar_mass"] for compound_entry in compounds for info in compound_entry["info"])
+        total_molar_mass = sum(compound_entry["compound"].molecular_weight for compound_entry in compounds)
+        for compound_entry in compounds:
+            compound = compound_entry["compound"]
+            existing_row = compound_entry["mapping_row"]
+
+            ratio = compound.molecular_weight / total_molar_mass if total_molar_mass > 0 else 0.0
+            # Adjust mass_per_litre based on ratio. The mass_per_litre is additive for compounds.
+            mass_per_litre = properties.get("mass_per_litre", 0.0)
+            corrected_mass_per_litre = float(mass_per_litre) * ratio + existing_row.get("mass_per_litre", 0.0)
+            # New row properties
+            row_properties = {
+                "name": existing_row["name"],
+                "iupac_name": existing_row["iupac_name"],
+                "other_names": existing_row["other_names"],
+                "exchange_name": existing_row["exchange_reaction"],
+                "mass_per_litre": corrected_mass_per_litre,
+                "mmol_concentration": 0.0,
+                "flux_upper_bound": 0.0,
+                "source": MediumSource.MEDIUM.value,
+                "record_origin": RecordOrigin.UPDATED.value,
+            }
+            row = create_new_row(existing_row["name"], row_properties)
+            rows.append(row)
+
+        return rows
+
+    def update_df_mappings(input_mapping: dict[str, str | dict[str, Any]], df_mapping):
+        for name, properties in input_mapping.items():
+            if name is None:
+                continue
+            # compounds are handled differently
+            if properties.get("is_compound", False):  # type: ignore
+                rows = create_new_rows_for_compounds(df_mapping, name, properties)
+                # Update or append to df_mapping
+                for row in rows:
+                    df_mapping = update_mapping_df_by_row(df_mapping, row, halt_on_not_found=halt_on_not_found)
+            else:
+                row = create_new_row(name, properties)
+                # Update or append to df_mapping
+                df_mapping = update_mapping_df_by_row(df_mapping, row, halt_on_not_found=halt_on_not_found)
+        return df_mapping
+
+    # ===================================================================================
     # Level 2: File mapping (overrides base)
     #
     # Load mappings from YAML file if provided, or use default (done once!)
-    file_mapping: dict[str, dict[str, Any]] = {}
+    file_mapping: dict[str, str | dict[str, Any]] = {}
     if custom_mapping_file is None:
         # Default to custom_exchange_mapping.yaml in yamls directory
         default_yaml_path = Path(__file__).parent / "yamls" / "custom_exchange_mapping.yaml"
@@ -259,214 +387,199 @@ def build_mappings(
                         file_mapping = yaml_data["custom_mapping"] or {}
         except Exception as e:
             logging.warning(f"Failed to load custom mapping file {custom_mapping_file}: {e}")
-    #########
-    for name, properties in file_mapping.items():
-        if name is None:
-            continue
-        # salts are handled by selecting their solute ions
-        if properties.get("is_salt", False):  # type: ignore
-            rows = create_new_rows_for_salts(df_mapping, name, properties)
-            # Update or append to df_mapping
-            for row in rows:
-                df_mapping = update_mapping_df(df_mapping, row)
-        else:
-            row = create_new_row(name, properties)
-            # Update or append to df_mapping
-            df_mapping = update_mapping_df(df_mapping, row)
-    ############################################################################
+    #
+    # Use the file mapping to update the dataframe
+    df_mapping = update_df_mappings(file_mapping, df_mapping)
+    # ===================================================================================
     # Level 3: Custom mapping parameter (highest precedence, overrides all)
     if custom_mapping:
-        for name, properties in custom_mapping.items():
-            if name is None:
-                continue
-
-            # salts are handled by selecting their solute ions
-            if properties.get("is_salt", False):  # type: ignore
-                rows = create_new_rows_for_salts(df_mapping, name, properties)
-                # Update or append to df_mapping
-                for row in rows:
-                    df_mapping = update_mapping_df(df_mapping, row)
-            else:
-                row = create_new_row(name, properties)
-                # Update or append to df_mapping
-                df_mapping = update_mapping_df(df_mapping, row)
-    #####################################################################################
-    # Level 4: unique_supplements are provided from metadate. If any is missing, add them
-    #          with default properties
-    map_keys = list(df_mapping["name"].values)
-    fuzzy_matches = []
-    unmapped = []
+        df_mapping = update_df_mappings(custom_mapping, df_mapping)
+    # ===================================================================================
+    # Level 4: unique_supplements are provided from metadate. Update their source if
+    #          existing, or add them to the mapping dataframe
+    # ===================================================================================
+    # Collect unique supplements from the dataframe
+    unique_supplements = set()
+    if supplement_column in growth_rates_df.columns:
+        for val in growth_rates_df[supplement_column].dropna().astype(str):
+            parts = [s.strip() for s in val.split(separator) if s.strip()]
+            for p in parts:
+                unique_supplements.add(p.lower())
+    #
+    unique_supplements_mapping: dict[str, str | dict[str, Any]] = {}
     for name in unique_supplements:
-        df, _ = find_in_df_mapping(df_mapping, name)
-        if df.empty:
-            # Fuzzy match against SBML/manual keys
-            matches = difflib.get_close_matches(name, map_keys, n=1, cutoff=fuzzy_threshold)
-            if matches:
-                best = matches[0]
-                df_row = df_mapping.loc[df_mapping["name"] == best].iloc[0]
-                row = {
-                    "name": name,
-                    "iupac_name": df_row["iupac_name"],
-                    "exchange_reaction": df_row["exchange_reaction"],
-                    "mass_per_litre": df_row["mass_per_litre"],
-                    "mmol_concentration": df_row["mmol_concentration"],
-                    "flux_upper_bound": df_row["flux_upper_bound"],
-                    "source": MediumSource.SUPPLEMENT.value,
-                }
-                # Update or append to df_mapping
-                df_mapping = update_mapping_df(df_mapping, row)
-                fuzzy_matches.append((name, best, row))
-            else:
-                message = (
-                    f"The exchange mapping element '{name}' found in metadata '{growth_rates_df.Name}', \n"
-                    f" but missing in mappings file '{custom_mapping_file}', \n"
-                    f" and organism's mapping provided as 'supplement_to_exchange_map' argument."
+        row = {
+            "name": name,
+            "iupac_name": "",
+            "other_names": set(),
+            "exchange_name": "",
+            "mass_per_litre": 0.0,
+            "mmol_concentration": 0.0,
+            "flux_upper_bound": 0.0,
+            "source": MediumSource.SUPPLEMENT.value,
+            "record_origin": RecordOrigin.UPDATED.value,
+        }
+        existing_rows, _ = search_by_name_in_df_mapping(df_mapping, row)
+        # Update the source if existing
+        if not existing_rows.empty:
+            df_mapping.loc[existing_rows.index[0], "source"] = MediumSource.SUPPLEMENT.value
+            df_mapping.loc[existing_rows.index[0], "record_origin"] = RecordOrigin.UPDATED.value
+            df_mapping.at[existing_rows.index[0], "other_names"].add(name)  # type: ignore
+        else:
+            unique_supplements_mapping[name] = create_new_row(name, row)
+
+    df_mapping = update_df_mappings(unique_supplements_mapping, df_mapping)
+
+    # ===================================================================================
+    # Sanity check: among UPDATED records that are not UNSTATED source, ensure that
+    # for each group of exchange_reaction, only one is defined as MEDIUM, SUPPLEMENT, or FIXED.
+    # If multiple are found, warn the user.
+    # Note: the precedence order is SUPPLEMENT > MEDIUM > FIXED > UNSTATED
+    df_sanity = df_mapping[
+        (
+            (df_mapping["record_origin"] == RecordOrigin.UPDATED.value)
+            & (df_mapping["source"] != MediumSource.UNSTATED.value)
+        )
+    ]
+    grouped = df_sanity.groupby("exchange_reaction")
+    for exchange_reaction, group in grouped:
+        if group.shape[0] > 1:
+            sources = group["source"].unique()
+            if len(sources) > 1:
+                alert(
+                    f"Sanity check warning: Multiple sources found for exchange reaction:'{exchange_reaction}': {sources}. "
+                    f"Please ensure only one of them is defined as SUPPLEMENT, MEDIUM, or FIXED.",
+                    halt_on_error=False,
                 )
-                logging.warning(message)
-                warnings.warn(message, UserWarning, stacklevel=2)
-                unmapped.append(name)
+    # ===================================================================================
+    # convert other_names sets to sorted lists and semicolon-separated strings
+    df_mapping["other_names"] = df_mapping["other_names"].apply(lambda x: sorted(x))
+    df_mapping["other_names"] = df_mapping["other_names"].apply(lambda x: ";".join(x))
+    # sort the dataframe by exchange_reaction
+    df_mapping = df_mapping.sort_values(by=["exchange_reaction"]).reset_index(drop=True)
     if verbose:
-        print("\n" + "=" * 70)
-        print("Medium source to Exchange Reaction Mapping")
-        print("=" * 70)
-
-        if fuzzy_matches:
-            print(f"\nFuzzy matches ({len(fuzzy_matches)}):")
-            for name, matched_key, r in fuzzy_matches:
-                print(f"  {name:30s} -> {r['exchange_reaction']:50s} (matched via '{matched_key}')")
-
-        if unmapped:
-            print(f"\nUnmapped supplements ({len(unmapped)}):")
-            for name in unmapped:
-                print(f"  {name}")
-
-        print("\n" + "=" * 70 + "\n")
-
-    if fixed_exchanges:
-        # Mark baseline exchanges
-        df_mapping.loc[df_mapping["exchange_reaction"].isin(fixed_exchanges), "source"] = MediumSource.FIXED.value
-
-    #######################################################################################
-    # Sanity check: each row must be eather is_supplement or is_baseline, both cannot be True
-    # df_subsets = df_mapping[(df_mapping["is_supplement"] & df_mapping["is_baseline"])]
-    # if not df_subsets.empty:
-    #     for _, row in df_subsets.iterrows():
-    #         message = (
-    #             f"Medium source '{row['name']}' cannot be both is_supplement:'True' and is_baseline:'True'. \n"
-    #             f"Check mappings file '{custom_mapping_file}' and  metadata."
-    #         )
-    #         logging.warning(message)
-    #         warnings.warn(message, UserWarning, stacklevel=2)
-    #####################################################################################
+        df_report = df_sanity.sort_values(by=["source", "exchange_reaction"]).reset_index(drop=True)
+        logging.info(f"Final updated mapping dataframe:\n{df_report.to_string()}")
+    # ===================================================================================
     return df_mapping
 
 
 def build_supplement_flux_dataframe(
     growth_rates_df: pd.DataFrame,
     mappings_df: pd.DataFrame,
-    supplement_column: str = "supplements",
     growth_rate_column: str = "mu_max",
     success_column: str = "success",
     max_od600_column: str = "max_value",
     max_time_column: str = "max_time",
     total_volume_column: str = "total_volume_uL",
     od600_conversion_rate: float = 0.4,
-    separator: str = ";",
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
+    # ==================================================================================
+    # the precedence order is SUPPLEMENT > MEDIUM > FIXED, and alll UNSTATED are ignored
+    #
+
+    # ==================================================================================
+    # Create dictionary and lists for supplements, mediums, fixed exchanges
+
     # Create a dictionary of all sources that are either supplement, medium, or fixed
-    all_exchanges = mappings_df.loc[
-        (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
-        | (mappings_df["source"] == MediumSource.MEDIUM.value)
-        | (mappings_df["source"] == MediumSource.FIXED.value),
-        "exchange_reaction",
+    valid_mappinsgs = mappings_df.loc[
+        (
+            (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
+            | (mappings_df["source"] == MediumSource.MEDIUM.value)
+            | (mappings_df["source"] == MediumSource.FIXED.value)
+        )
+        & (mappings_df["source"] != MediumSource.UNSTATED.value),
+        :,
+    ]
+    all_exchanges = valid_mappinsgs["exchange_reaction"]
+    # createlists of exchanges
+    supplement_exchanges = mappings_df.loc[
+        (mappings_df["source"] == MediumSource.SUPPLEMENT.value), "exchange_reaction"
     ]
     mediums_exchanges = mappings_df.loc[(mappings_df["source"] == MediumSource.MEDIUM.value), "exchange_reaction"]
+    fixed_exchanges = mappings_df.loc[
+        mappings_df["source"] == MediumSource.FIXED.value, ["exchange_reaction", "flux_upper_bound"]
+    ]
+    # ==================================================================================
+    # Build dataframe columns for all exchanges and initialize to zero
+    columns: dict[str, float] = dict.fromkeys(all_exchanges, 0.0)
 
     def calculate_flux(mapping_row):
-        rxn = mapping_row["exchange_reaction"].values[0]
+        exchange_reaction = mapping_row["exchange_reaction"].values[0]
         mmol_value = mapping_row["mmol_concentration"].values[0]
         flux_upper_bound = mapping_row["flux_upper_bound"].values[0]
         # ensure column exists
-        if rxn not in r_mmol_per_gCWD_per_time:
-            r_mmol_per_gCWD_per_time[rxn] = 0.0
+        # if exchange_reaction not in new_row:
+        #     new_row[exchange_reaction] = 0.0
         # Add mmol value for this supplement
-        max_od = row.get(max_od600_column, 0.0)
-        max_time = row.get(max_time_column, 0.0)
+        max_od = existing_row.get(max_od600_column, 0.0)
+        max_time = existing_row.get(max_time_column, 0.0)
         avg_od600 = max_od / 2
         # od600 to gCDW per litre
         gCWD_per_litre = od600_to_gCDW(avg_od600, od600_conversion_rate)  # noqa: N806
         # gCWD per liter to gCWD
         gCWD = (  # noqa: N806
-            gCWD_per_litre * (row.get(total_volume_column, 1.0) / 1e6)  # convert uL to L  # noqa: N806
+            gCWD_per_litre * (existing_row.get(total_volume_column, 1.0) / 1e6)  # convert uL to L  # noqa: N806
         )
-        return rxn, flux_upper_bound, mmol_value / (gCWD * max_time) if gCWD > 0 and max_time > 0 else 0.0
+        return exchange_reaction, flux_upper_bound, mmol_value / (gCWD * max_time) if gCWD > 0 and max_time > 0 else 0.0
 
     # Build rows with mmol values
-    rows_mmol: list[dict[str, float]] = []
-    for _, row in growth_rates_df.iterrows():
+    rows: list[dict[str, float]] = []
+    for _, existing_row in growth_rates_df.iterrows():
         # Skip rows where success column exists and is False
-        if success_column in growth_rates_df.columns and not row[success_column]:
+        if success_column in growth_rates_df.columns and not existing_row[success_column]:
             continue
         # create a row's dictionary for all exchanges
-        r_mmol_per_gCWD_per_time: dict[str, float] = dict.fromkeys(all_exchanges, 0.0)  # noqa: N806
-        # parse supplements for this row
-        supps_val = row.get(supplement_column, None)
-        if pd.notna(supps_val):
-            for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-                mapping_row = mappings_df.loc[(mappings_df["name"] == part) | (mappings_df["iupac_name"] == part)]
+        new_row: dict[str, float] = columns.copy()  # noqa: N806
+        # ==================================================================================
+        # To follow the precedence order, first add fixed exchanges, then mediums will
+        # override them if necessary, and finally supplements will override both.
+        # ==================================================================================
+        for column in new_row:
+            if column in fixed_exchanges["exchange_reaction"].values:
+                flux_upper_bound = fixed_exchanges[fixed_exchanges["exchange_reaction"] == column][
+                    "flux_upper_bound"
+                ].values[0]
+                new_row[column] = flux_upper_bound
+            #
+            if column in mediums_exchanges.values:
+                mapping_row = valid_mappinsgs.loc[valid_mappinsgs["exchange_reaction"] == column]
                 if mapping_row.empty:
                     continue
 
-                rxn, flux_upper_bound, flux = calculate_flux(mapping_row)
+                exchange_reaction, _, flux = calculate_flux(mapping_row)
                 # flux in mmol / gCWD / time
-                r_mmol_per_gCWD_per_time[rxn] = flux
-                if r_mmol_per_gCWD_per_time[rxn] == 0.0 and flux_upper_bound > 0.0:
-                    r_mmol_per_gCWD_per_time[rxn] = flux_upper_bound
-        for ex in mediums_exchanges:
-            mapping_row = mappings_df.loc[mappings_df["exchange_reaction"] == ex]
-            if mapping_row.empty:
-                continue
+                new_row[exchange_reaction] = flux
+            #
+            if column in supplement_exchanges.values:
+                mapping_row = valid_mappinsgs.loc[valid_mappinsgs["exchange_reaction"] == column]
+                if mapping_row.empty:
+                    continue
 
-            rxn, flux_upper_bound, flux = calculate_flux(mapping_row)
-            # flux in mmol / gCWD / time
-            r_mmol_per_gCWD_per_time[rxn] = flux
-            if r_mmol_per_gCWD_per_time[rxn] == 0.0 and flux_upper_bound > 0.0:
-                r_mmol_per_gCWD_per_time[rxn] = flux_upper_bound
-        rows_mmol.append(r_mmol_per_gCWD_per_time)
+                exchange_reaction, _, flux = calculate_flux(mapping_row)
+                # flux in mmol / gCWD / time
+                new_row[exchange_reaction] = flux
 
-    result_df_mmol = pd.DataFrame(rows_mmol)
-    # ensure fixed columns are present (even if empty)
-    fixed_exchanges = mappings_df.loc[mappings_df["source"] == MediumSource.FIXED.value]
-    for ex, flux_upper_bound in fixed_exchanges[["exchange_reaction", "flux_upper_bound"]].itertuples(index=False):
-        if ex not in result_df_mmol.columns:
-            if flux_upper_bound > 0.0:
-                result_df_mmol[ex] = flux_upper_bound  # noqa: N806
-            else:
-                result_df_mmol[ex] = 0.0
-        else:
-            # Make sure they are not supplements, since some of the supplement values
-            # are none-zero
-            if result_df_mmol[ex].sum() == 0.0:
-                result_df_mmol[ex] = flux_upper_bound
+        rows.append(new_row)
 
+    result_df = pd.DataFrame(rows)
     # Reorder columns: exchanges sorted, then growth rate last
-    exch_cols = sorted([c for c in result_df_mmol.columns if c != growth_rate_column])
+    exch_cols = sorted([c for c in result_df.columns if c != growth_rate_column])
     # Apply suffix to exchange columns if requested
     if exchange_suffix:
         rename_map = {col: f"{col}{exchange_suffix}" for col in exch_cols}
-        result_df_mmol = result_df_mmol.rename(columns=rename_map)
+        result_df = result_df.rename(columns=rename_map)
         exch_cols = [f"{col}{exchange_suffix}" for col in exch_cols]
     # Add growth rate column
-    result_df_mmol[growth_rate_column] = growth_rates_df.loc[
+    result_df[growth_rate_column] = growth_rates_df.loc[
         growth_rates_df[success_column] if success_column in growth_rates_df.columns else growth_rates_df.index,
         growth_rate_column,
     ].values
-
     # Reorder columns: exchanges sorted, then growth rate last
-    result_df_mmol = result_df_mmol[exch_cols + [growth_rate_column]]
+    result_df = result_df[exch_cols + [growth_rate_column]]
 
-    return result_df_mmol
+    return result_df
 
 
 def build_AMN_inputs_dataframe(  # noqa: N802
@@ -478,58 +591,88 @@ def build_AMN_inputs_dataframe(  # noqa: N802
     separator: str = ";",
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
+    # ==================================================================================
+    # the precedence order is SUPPLEMENT > MEDIUM > FIXED, and alll UNSTATED are ignored
+    #
+
+    # ==================================================================================
+    # Create dictionary and lists for supplements, mediums, fixed exchanges
+
     # Create a dictionary of all sources that are either supplement, medium, or fixed
-    all_exchanges = mappings_df.loc[
-        (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
-        | (mappings_df["source"] == MediumSource.MEDIUM.value)
-        | (mappings_df["source"] == MediumSource.FIXED.value),
-        "exchange_reaction",
+    valid_mappinsgs = mappings_df.loc[
+        (
+            (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
+            | (mappings_df["source"] == MediumSource.MEDIUM.value)
+            | (mappings_df["source"] == MediumSource.FIXED.value)
+        )
+        & (mappings_df["source"] != MediumSource.UNSTATED.value),
+        :,
     ]
-    # Build rows
-    rows: list[dict[str, int | float | None]] = []
-    for _, row in growth_rates_df.iterrows():
+    all_exchanges = valid_mappinsgs["exchange_reaction"]
+    supplement_mappings = valid_mappinsgs.loc[(valid_mappinsgs["source"] == MediumSource.SUPPLEMENT.value), :]
+    # createlists of exchanges
+    supplement_exchanges = valid_mappinsgs.loc[
+        (valid_mappinsgs["source"] == MediumSource.SUPPLEMENT.value), "exchange_reaction"
+    ]
+    mediums_exchanges = valid_mappinsgs.loc[
+        (valid_mappinsgs["source"] == MediumSource.MEDIUM.value), "exchange_reaction"
+    ]
+    fixed_exchanges = valid_mappinsgs.loc[
+        valid_mappinsgs["source"] == MediumSource.FIXED.value, ["exchange_reaction", "flux_upper_bound"]
+    ]
+    # ==================================================================================
+    # Build dataframe columns for all exchanges and initialize to zero
+    columns: dict[str, float] = dict.fromkeys(all_exchanges, 0.0)
+    rows: list[dict[str, float]] = []
+    for _, existing_row in growth_rates_df.iterrows():
         # Skip rows where success column exists and is False
-        if success_column in growth_rates_df.columns and not row[success_column]:
+        if success_column in growth_rates_df.columns and not existing_row[success_column]:
             continue
         # create a row's dictionary for all exchanges
-        new_row: dict[str, int | float | None] = dict.fromkeys(all_exchanges, 0)
-        # parse supplements for this row
-        supps_val = row.get(supplement_column)
-        if pd.notna(supps_val):
-            for part in [s.strip().lower() for s in str(supps_val).split(separator) if s.strip()]:
-                names = mappings_df.loc[(mappings_df["name"] == part) | (mappings_df["iupac_name"] == part)]
-                if names.empty:
-                    continue
-                rxn = names["exchange_reaction"].values[0]
-                # ensure column exists
-                # if rxn not in row:
-                #     row[rxn] = 0
-                new_row[rxn] = 1
-
-        # add growth rate as final column (preserve column name passed)
-        new_row[growth_rate_column] = row.get(growth_rate_column)
-
+        new_row: dict[str, float] = columns.copy()  # noqa: N806
+        # ==================================================================================
+        # To follow the precedence order, first add fixed exchanges, then mediums will
+        # override them if necessary, and finally supplements will override both.
+        # ==================================================================================
+        for column in new_row:
+            new_row[column] = 0
+            if column in fixed_exchanges["exchange_reaction"].values:
+                new_row[column] = 1
+            #
+            if column in mediums_exchanges.values:
+                new_row[column] = 1
+            #
+            if column in supplement_exchanges.values:
+                supps_vals = existing_row.get(supplement_column, [])
+                parts = (s.strip().lower() for s in str(supps_vals).split(separator) if s.strip())
+                names = [
+                    supplement_mappings.loc[
+                        (supplement_mappings["name"] == part) | (supplement_mappings["iupac_name"] == part),
+                        "exchange_reaction",
+                    ].values
+                    for part in parts
+                ]
+                names = {item for sublist in names for item in sublist}  # flatten and unique
+                if column in names:
+                    new_row[column] = 1
+                else:
+                    new_row[column] = 0
         rows.append(new_row)
 
     result_df = pd.DataFrame(rows)
-    # ensure medium columns are present (even if empty)
-    medium_exchanges = mappings_df.loc[mappings_df["source"] == MediumSource.MEDIUM.value]
-    for ex in medium_exchanges["exchange_reaction"]:
-        result_df[ex] = 1
-    # ensure fixed columns are present (even if empty)
-    fixed_exchanges = mappings_df.loc[mappings_df["source"] == MediumSource.FIXED.value]
-    for ex in fixed_exchanges["exchange_reaction"]:
-        result_df[ex] = 1
-
     # Reorder columns: exchanges sorted, then growth rate last
     exch_cols = sorted([c for c in result_df.columns if c != growth_rate_column])
-
     # Apply suffix to exchange columns if requested
     if exchange_suffix:
         rename_map = {col: f"{col}{exchange_suffix}" for col in exch_cols}
         result_df = result_df.rename(columns=rename_map)
         exch_cols = [f"{col}{exchange_suffix}" for col in exch_cols]
-
+    # Add growth rate column
+    result_df[growth_rate_column] = growth_rates_df.loc[
+        growth_rates_df[success_column] if success_column in growth_rates_df.columns else growth_rates_df.index,
+        growth_rate_column,
+    ].values
+    # Reorder columns: exchanges sorted, then growth rate last
     result_df = result_df[exch_cols + [growth_rate_column]]
 
     return result_df
@@ -538,7 +681,7 @@ def build_AMN_inputs_dataframe(  # noqa: N802
 def build_AMN_levels_dataframe(  # noqa: N802
     exchange_matrix: pd.DataFrame,
     mappings_df: pd.DataFrame,
-    flux_df: pd.DataFrame | None = None,
+    flux_df: pd.DataFrame,
     growth_rate_column: str = "mu_max",
     default_level: int = 1,
     default_max_value: int = 1000,
@@ -547,23 +690,40 @@ def build_AMN_levels_dataframe(  # noqa: N802
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
     # Create a dictionary of all flux upper bound where exchange are either supplement, medium, or fixed
-    flux_upper_bounds = (
-        mappings_df.loc[
+    # the precedence order is SUPPLEMENT > MEDIUM > FIXED, and alll UNSTATED are ignored
+    flux_upper_bounds = mappings_df.loc[
+        (
             (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
             | (mappings_df["source"] == MediumSource.MEDIUM.value)
-            | (mappings_df["source"] == MediumSource.FIXED.value),
-            ["exchange_reaction", "flux_upper_bound"],
-        ]
+            | (mappings_df["source"] == MediumSource.FIXED.value)
+        )
+        & (mappings_df["source"] != MediumSource.UNSTATED.value),
+        :,
+    ]
+    # group by exchange_reaction and select the supplement > medium > fixed
+    flux_upper_bounds = flux_upper_bounds.sort_values(
+        by=["exchange_reaction", "source"],
+        key=lambda x: x.map(
+            {
+                MediumSource.SUPPLEMENT.value: 0,
+                MediumSource.MEDIUM.value: 1,
+                MediumSource.FIXED.value: 2,
+            }
+        ),
+    )
+
+    flux_upper_bounds = flux_upper_bounds.drop_duplicates(subset=["exchange_reaction"], keep="first")
+    # create the dictionary
+    flux_upper_bounds = (
+        mappings_df[["exchange_reaction", "flux_upper_bound"]]
         .set_index("exchange_reaction")["flux_upper_bound"]
         .to_dict()
     )
-
-    if flux_df is not None:
-        # Override with flux_df values if provided and greater than zero
-        for col in flux_df.columns:
-            trimmed_col = col.replace(exchange_suffix, "") if exchange_suffix else col
-            if trimmed_col in flux_upper_bounds and flux_df[col].max() > 0.0:
-                flux_upper_bounds[trimmed_col] = flux_df[col].max()
+    # Override with flux_df values if provided and greater than zero
+    for col in flux_df.columns:
+        trimmed_col = col.replace(exchange_suffix, "") if exchange_suffix else col
+        if trimmed_col in flux_upper_bounds and flux_df[col].max() > 0.0:
+            flux_upper_bounds[trimmed_col] = flux_df[col].max()
 
     # Get all exchange columns (exclude growth rate column)
     exchange_cols = [col for col in exchange_matrix.columns if col != growth_rate_column]
@@ -639,7 +799,7 @@ def parse_sbml_exchanges(sbml_path: str | Path) -> dict[str, str]:
         return mapping
 
     except ImportError:
-        print("Warning: COBRApy not available, attempting XML parsing")
+        logging.warning("COBRApy not available, attempting XML parsing for SBML exchanges")
         return _parse_sbml_exchanges_fallback(sbml_path)
 
 
@@ -738,20 +898,15 @@ def parse_sbml_exchange_bounds(
             if reaction.id.startswith("EX_"):
                 # Get upper bound (max_value)
                 upper_bound = reaction.upper_bound
-
                 # Cap very large or infinite bounds at 1000
-                if upper_bound > 10000 or upper_bound == float("inf"):
-                    max_value = 1000
-                else:
-                    max_value = int(upper_bound)
-
+                max_value = 1000 if upper_bound > 10000 or upper_bound == float("inf") else int(upper_bound)
                 # Store as (level, max_value) tuple
                 bounds_map[reaction.id] = (default_level, max_value)
 
         return bounds_map
 
     except ImportError:
-        print("Warning: COBRApy not available, attempting XML parsing")
+        logging.warning("COBRApy not available, attempting XML parsing for SBML exchanges")
         return _parse_sbml_exchange_bounds_fallback(sbml_path, default_level)
 
 
@@ -799,10 +954,7 @@ def _parse_sbml_exchange_bounds_fallback(
                     if "upper" in param_id.lower() or "ub" in param_id.lower():
                         try:
                             value = float(param.get("value", "1000"))
-                            if value > 10000 or value == float("inf"):
-                                upper_bound = 1000
-                            else:
-                                upper_bound = int(value)
+                            upper_bound = 1000 if value > 10000 or value == float("inf") else int(value)
                         except (ValueError, TypeError):
                             upper_bound = 1000
 

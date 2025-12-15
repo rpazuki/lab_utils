@@ -1,4 +1,5 @@
 import ast
+import logging
 import re
 from pathlib import Path
 from typing import Literal
@@ -122,8 +123,8 @@ def create_file_mapping_from_patterns(data_dir, raw_pattern, meta_pattern):
     meta_data_files.sort()
 
     if len(raw_data_files) != len(meta_data_files):
-        print(f"Warning: Found {len(raw_data_files)} raw data files but {len(meta_data_files)} metadata files")
-        print("Files will be paired in order, remaining files will be skipped")
+        logging.warning(f"Found {len(raw_data_files)} raw data files but {len(meta_data_files)} metadata files")
+        logging.warning("Files will be paired in order, remaining files will be skipped")
 
     # Create mapping by pairing files (metadata -> raw data)
     file_mapping = {}
@@ -470,16 +471,16 @@ def get_compound_by_name(compound_name: str, chache: bool = True):
         if len(compound) > 0:
             return compound[0]
         else:
-            print(
-                f"Warning: pubchempy did not find the compound name:'{compound_name}', cannot fetch molecular weight."
+            logging.warning(
+                f"pubchempy did not find the compound name:'{compound_name}', cannot fetch molecular weight."
             )
             return None
     except ImportError as e:
-        print("Warning: pubchempy not available.")
-        print(f"ImportError: {e}")
+        logging.warning("pubchempy not available.")
+        logging.warning(f"ImportError: {e}")
         return None
     except Exception as e:
-        print(f"Warning: An error occurred while fetching molecular weight for name:'{compound_name}': {e}")
+        logging.warning(f"An error occurred while fetching molecular weight for name:'{compound_name}': {e}")
         return None
 
 
@@ -496,14 +497,14 @@ def get_compound_by_id(compound_id: str, chache: bool = True):
         if len(compound) > 0:
             return compound[0]
         else:
-            print(f"Warning: pubchempy did not find the compound cid:'{compound_id}', cannot fetch molecular weight.")
+            logging.warning(f"pubchempy did not find the compound cid:'{compound_id}', cannot fetch molecular weight.")
             return None
     except ImportError as e:
-        print("Warning: pubchempy not available.")
-        print(f"ImportError: {e}")
+        logging.warning("pubchempy not available.")
+        logging.warning(f"ImportError: {e}")
         return None
     except Exception as e:
-        print(f"Warning: An error occurred while fetching molecular weight for cid:'{compound_id}': {e}")
+        logging.warning(f"An error occurred while fetching molecular weight for cid:'{compound_id}': {e}")
         return None
 
 
@@ -520,14 +521,14 @@ def get_compound_by_smiles(smiles: str, chache: bool = True):
         if len(compound) > 0:
             return compound[0]
         else:
-            print(f"Warning: pubchempy did not find the compound smiles:'{smiles}', cannot fetch molecular weight.")
+            logging.warning(f"pubchempy did not find the compound smiles:'{smiles}', cannot fetch molecular weight.")
             return None
     except ImportError as e:
-        print("Warning: pubchempy not available.")
-        print(f"ImportError: {e}")
+        logging.warning("pubchempy not available.")
+        logging.warning(f"ImportError: {e}")
         return None
     except Exception as e:
-        print(f"Warning: An error occurred while fetching molecular weight for smiles:'{smiles}': {e}")
+        logging.warning(f"An error occurred while fetching molecular weight for smiles:'{smiles}': {e}")
         return None
 
 
