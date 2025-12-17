@@ -494,8 +494,6 @@ def build_supplement_flux_dataframe(
     max_od600_column: str = "max_value",
     max_time_column: str = "max_time",
     supplement_column: str = "supplements",
-    media_volume_column: str = "media_volume_uL",
-    supplement_volume_column: str = "supplement_volume_uL",
     total_volume_column: str = "total_volume_uL",
     od600_conversion_rate: float = 0.4,
     separator: str = ";",

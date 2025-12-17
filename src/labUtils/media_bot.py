@@ -11,17 +11,16 @@ from __future__ import annotations
 import re
 from io import StringIO
 from pathlib import Path
-from typing import Union
 
 import pandas as pd
 
 __all__ = [
-    'parse_raw_CLARIOstar_export',
-    'parse_protocol_metadata',
-    'parse',
-    'report',
-    'parse_time_label',
-    'calculate_replicate_statistics',
+    "parse_raw_CLARIOstar_export",
+    "parse_protocol_metadata",
+    "parse",
+    "report",
+    "parse_time_label",
+    "calculate_replicate_statistics",
 ]
 
 
@@ -33,13 +32,15 @@ def find_header_row(lines):
             return i
     raise ValueError("Could not find the data header row (Well Row,Well Col,Content,...) in the raw CSV.")
 
+
 _time_pat = re.compile(r"^\s*(?:(?P<h>\d+)\s*h)?\s*(?:(?P<m>\d+)\s*min)?\s*$")
+
 
 def parse_time_label(lbl: str):
     """Turn '3 h 15 min' -> (3.25 h, 3, 15). Handle '0 h 60 min' etc."""
     if lbl is None:
         return 0.0, 0, 0
-    s = str(lbl).strip().replace("\u2009"," ").replace("\xa0"," ")
+    s = str(lbl).strip().replace("\u2009", " ").replace("\xa0", " ")
     m = _time_pat.match(s)
     if not m:
         return None, None, None
@@ -47,7 +48,8 @@ def parse_time_label(lbl: str):
     mnt = int(m.group("m")) if m.group("m") else 0
     h += mnt // 60
     mnt = mnt % 60
-    return h + mnt/60.0, h, mnt
+    return h + mnt / 60.0, h, mnt
+
 
 def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd.DataFrame:
     """Parse CLARIOstar OD600 export and process the header to create a tidy long format dataframe..
@@ -100,7 +102,7 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
 
     # Drop the two header rows and set final column names
     df = df.iloc[2:].reset_index(drop=True)
-    df = df.iloc[:, :len(final_cols)].copy()
+    df = df.iloc[:, : len(final_cols)].copy()
     df.columns = final_cols
 
     # Normalize types
@@ -108,9 +110,13 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
     df["well_col"] = pd.to_numeric(df["well_col"], errors="coerce").astype("Int64")
 
     # Wide -> long
-    value_vars = [c for c in df.columns if c not in ("well_row","well_col","content")]
-    long_df = df.melt(id_vars=["well_row","well_col","content"], value_vars=value_vars,
-                      var_name="time_label", value_name=value_column_name)
+    value_vars = [c for c in df.columns if c not in ("well_row", "well_col", "content")]
+    long_df = df.melt(
+        id_vars=["well_row", "well_col", "content"],
+        value_vars=value_vars,
+        var_name="time_label",
+        value_name=value_column_name,
+    )
     long_df[value_column_name] = pd.to_numeric(long_df[value_column_name], errors="coerce")
     long_df["well"] = long_df["well_row"].astype(str) + long_df["well_col"].astype("Int64").astype(str)
 
@@ -122,7 +128,7 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
     long_df["time_min"] = (long_df["time_h"] * 60).round(3)
 
     # Sort by well then time
-    long_df = long_df.sort_values(["well_row","well_col","time_min"], kind="stable").reset_index(drop=True)
+    long_df = long_df.sort_values(["well_row", "well_col", "time_min"], kind="stable").reset_index(drop=True)
     return long_df
 
 
@@ -134,9 +140,10 @@ def split_sections(meta_text: str):
     idxs.append(len(lines))
     for s, e in zip(idxs, idxs[1:]):
         title = lines[s].strip("= ").strip()
-        block = [ln for ln in lines[s+1:e] if not (ln.startswith("===") and ln.endswith("==="))]
+        block = [ln for ln in lines[s + 1 : e] if not (ln.startswith("===") and ln.endswith("==="))]
         sections[title] = "\n".join(block)
     return sections
+
 
 def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
     """Parse the '=== Experiment Data ===' section as a DataFrame and tidy column names."""
@@ -162,26 +169,31 @@ def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
         if orig in out.columns:
             out[new] = pd.to_numeric(out[orig], errors="coerce")
 
-    for c in ["Well","Strain","Strain Well","Media Type","Supplements"]:
+    for c in ["Well", "Strain", "Strain Well", "Media Type", "Supplements"]:
         if c in out.columns:
             out[c] = out[c].astype(str).str.strip()
 
-    keep = ["Well","Strain","Strain Well","Media Type","Supplements"] + list(vol_map.values())
+    keep = ["Well", "Strain", "Strain Well", "Media Type", "Supplements"] + list(vol_map.values())
     keep = [c for c in keep if c in out.columns]
-    tidy = out[keep].drop_duplicates(subset=["Well"]).rename(columns={
-        "Well": "well",
-        "Strain": "strain",
-        "Strain Well": "strain_well",
-        "Media Type": "media_type",
-        "Supplements": "supplements",
-    }).reset_index(drop=True)
+    tidy = (
+        out[keep]
+        .drop_duplicates(subset=["Well"])
+        .rename(
+            columns={
+                "Well": "well",
+                "Strain": "strain",
+                "Strain Well": "strain_well",
+                "Media Type": "media_type",
+                "Supplements": "supplements",
+            }
+        )
+        .reset_index(drop=True)
+    )
     tidy["is_blank"] = tidy["strain"].str.lower().eq("blank")
     return tidy
 
 
-def parse(raw_data: Union[pd.DataFrame, Path],
-          meta_data: Union[pd.DataFrame, Path],
-          value_column_name: str = "od") -> pd.DataFrame:
+def parse(raw_data: pd.DataFrame | Path, meta_data: pd.DataFrame | Path, value_column_name: str = "od") -> pd.DataFrame:
     """Parse raw OD600 data and metadata, return merged tidy DataFrame.
 
     Parameters
@@ -215,17 +227,35 @@ def parse(raw_data: Union[pd.DataFrame, Path],
     df = raw_long.merge(meta, on="well", how="left", validate="m:1")
 
     ordered_cols = [
-        "well","well_row","well_col","content","strain","strain_well","is_blank","media_type","supplements",
-        "media_volume_uL","water_volume_uL","supplement_volume_uL","volume_per_supplement_uL","total_volume_uL",
-        "time_label","time_h","time_min_int","time_h_int","time_min",value_column_name
+        "well",
+        "well_row",
+        "well_col",
+        "content",
+        "strain",
+        "strain_well",
+        "is_blank",
+        "media_type",
+        "supplements",
+        "media_volume_uL",
+        "water_volume_uL",
+        "supplement_volume_uL",
+        "volume_per_supplement_uL",
+        "total_volume_uL",
+        "time_label",
+        "time_h",
+        "time_min_int",
+        "time_h_int",
+        "time_min",
+        value_column_name,
     ]
     ordered_cols = [c for c in ordered_cols if c in df.columns]
     df = df[ordered_cols].copy()
     return df
 
-def report(raw_data: Union[pd.DataFrame, Path],
-           meta_data: Union[pd.DataFrame, Path],
-           value_column_name: str = "od") -> pd.DataFrame:
+
+def report(
+    raw_data: pd.DataFrame | Path, meta_data: pd.DataFrame | Path, value_column_name: str = "od"
+) -> pd.DataFrame:
     """Generate a validation report comparing raw data and metadata.
 
     Parameters
@@ -259,12 +289,12 @@ def report(raw_data: Union[pd.DataFrame, Path],
     meta_wells = set(meta["well"].unique())
     miss_meta = sorted(raw_wells - meta_wells)
     if miss_meta:
-        report_rows.append({"issue": "wells_missing_in_metadata", "count": len(miss_meta),
-                            "wells": ";".join(miss_meta[:96])})
+        report_rows.append(
+            {"issue": "wells_missing_in_metadata", "count": len(miss_meta), "wells": ";".join(miss_meta[:96])}
+        )
     miss_raw = sorted(meta_wells - raw_wells)
     if miss_raw:
-        report_rows.append({"issue": "wells_missing_in_raw", "count": len(miss_raw),
-                            "wells": ";".join(miss_raw[:96])})
+        report_rows.append({"issue": "wells_missing_in_raw", "count": len(miss_raw), "wells": ";".join(miss_raw[:96])})
     non_num = raw_long[value_column_name].isna().sum()
     if non_num:
         report_rows.append({"issue": f"non_numeric_{value_column_name}_values", "count": int(non_num)})
@@ -280,7 +310,7 @@ def calculate_replicate_statistics(
     direction: str = "alphabetical",
     sample_size: int = 3,
     ddof: int = 1,
-    value_column_name: str = "od"
+    value_column_name: str = "od",
 ) -> pd.DataFrame:
     """Calculate mean and standard deviation for groups of replicate wells.
 
@@ -363,9 +393,7 @@ def calculate_replicate_statistics(
     # Validate direction parameter
     direction = direction.lower()
     if direction not in ["alphabetical", "alpha", "numerical", "num"]:
-        raise ValueError(
-            f"Invalid direction '{direction}'. Must be 'alphabetical'/'alpha' or 'numerical'/'num'"
-        )
+        raise ValueError(f"Invalid direction '{direction}'. Must be 'alphabetical'/'alpha' or 'numerical'/'num'")
 
     # Validate sample_size
     if sample_size < 1:
@@ -402,8 +430,9 @@ def calculate_replicate_statistics(
     df_with_groups = df_parsed.merge(unique_wells[["well", "group_num"]], on="well", how="left")
 
     # Identify time columns for grouping
-    time_cols = [col for col in ["time_label", "time_h", "time_min", "time_h_int", "time_min_int"]
-                 if col in df_parsed.columns]
+    time_cols = [
+        col for col in ["time_label", "time_h", "time_min", "time_h_int", "time_min_int"] if col in df_parsed.columns
+    ]
 
     # Group by group_num and time, then calculate statistics
     group_cols = ["group_num"] + time_cols
@@ -413,7 +442,7 @@ def calculate_replicate_statistics(
         value_column_name: [
             (f"{value_column_name}_mean", "mean"),
             (f"{value_column_name}_std", lambda x: x.std(ddof=ddof)),
-            ("count", "count")
+            ("count", "count"),
         ],
         "well": [("wells", lambda x: ",".join(sorted(set(x))))],
         "well_row": [("well_rows", lambda x: ",".join(sorted(set(x))))],
@@ -421,8 +450,9 @@ def calculate_replicate_statistics(
     }
 
     # Include metadata columns from first well in each group
-    metadata_cols = [col for col in df_parsed.columns if col not in
-                    required_cols + time_cols + ["content", "group_num"]]
+    metadata_cols = [
+        col for col in df_parsed.columns if col not in required_cols + time_cols + ["content", "group_num"]
+    ]
     for col in metadata_cols:
         if col in df_parsed.columns:
             agg_dict[col] = "first"
@@ -468,13 +498,15 @@ def calculate_replicate_statistics(
     stats_df["group_id"] = stats_df.apply(create_group_id, axis=1)
 
     # Reorder columns for better readability
-    first_cols = ["group_id",
-                  "wells",
-                  "well_rows",
-                  "well_cols",
-                  f"{value_column_name}_mean",
-                  f"{value_column_name}_std",
-                  "n_replicates"]
+    first_cols = [
+        "group_id",
+        "wells",
+        "well_rows",
+        "well_cols",
+        f"{value_column_name}_mean",
+        f"{value_column_name}_std",
+        "n_replicates",
+    ]
     first_cols = [col for col in first_cols if col in stats_df.columns]
     other_cols = [col for col in stats_df.columns if col not in first_cols]
     stats_df = stats_df[first_cols + other_cols]
@@ -492,5 +524,10 @@ def calculate_replicate_statistics(
             break  # Use first available time column for sorting
 
     stats_df = stats_df.sort_values(sort_cols).reset_index(drop=True)
+
+    # Romove "_first" suffix from columns names that have it
+    first_suffix_cols = [col for col in stats_df.columns if col.endswith("_first")]
+    for first_col in first_suffix_cols:
+        stats_df = stats_df.rename(columns={first_col: first_col[:-6]})  # Remove '_first' suffix
 
     return stats_df
