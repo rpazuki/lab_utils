@@ -523,7 +523,6 @@ class DFProcess(Process):
             #         f"The 'DFProcess' cannot pass the 'output_dir' to the method '{method}' "
             #         f"of package '{package}' because it does not accept such argument."
             #     )
-
         if is_cached:
             # create a cache key based on function name and arguments
             cache_key = (package, method, name)

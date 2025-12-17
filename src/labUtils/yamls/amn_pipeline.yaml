@@ -27,7 +27,7 @@ pipelines:
                     growth_rates_df: growth_data # The 'growth_data' input defined above
                     supplement_to_exchange_map: model_sbml # The 'model_sbml' input defined above
                     supplement_column: supplements # The column name for OD values in output dataframe
-                    halt_on_not_found: false
+                    halt_on_error: false
                     verbose: true
             - df_flux:
                 package: labUtils.amn_mappings

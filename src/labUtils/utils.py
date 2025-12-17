@@ -749,8 +749,8 @@ def od600_to_gCDW(od600: float | list[float] | np.ndarray, conversion_rate: floa
     return od600 * conversion_rate
 
 
-def mg_to_mmol(
-    mass_mg: float | list[float] | np.ndarray,
+def g_to_mol(
+    mass_g: float | list[float] | np.ndarray,
     molar_mass_g_per_mol: float,
 ) -> float | np.ndarray:
     """
@@ -758,8 +758,8 @@ def mg_to_mmol(
 
     Parameters
     ----------
-    mass_mg : float | list[float] | np.ndarray
-        Mass in miligrams
+    mass_g : float | list[float] | np.ndarray
+        Mass in grams
 
     molar_mass_g_per_mol : float
         Molar mass of the substance in grams per mole
@@ -769,10 +769,10 @@ def mg_to_mmol(
     float | np.ndarray
         Amount in millimoles
     """
-    if isinstance(mass_mg, (list, np.ndarray)):
-        mass_mg = np.array(mass_mg)  # Convert to numpy array for vectorized operations
+    if isinstance(mass_g, (list, np.ndarray)):
+        mass_g = np.array(mass_g)  # Convert to numpy array for vectorized operations
 
-    return mass_mg / molar_mass_g_per_mol  # mg to mmol
+    return mass_g / molar_mass_g_per_mol  # g to mol
 
 
 def find_molecular_weight(

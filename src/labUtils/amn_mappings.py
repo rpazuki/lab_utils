@@ -17,8 +17,8 @@ import pandas as pd
 from labUtils.utils import (
     find_molecular_weight,
     find_molecular_weight_by_id,
+    g_to_mol,
     get_compound_by_name,
-    mg_to_mmol,
     od600_to_gCDW,
 )
 
@@ -50,12 +50,12 @@ class SearchResult(Enum):
 def build_mappings(
     growth_rates_df: pd.DataFrame,
     supplement_to_exchange_map: dict[str, str],
-    supplement_column: str,
+    supplement_column: str = "supplements",
     custom_mapping_file: str | Path | None = None,
     custom_mapping: dict[str, str | dict[str, Any]] | None = None,
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
-    halt_on_not_found: bool = False,
+    halt_on_error: bool = False,
     verbose: bool = False,
 ) -> pd.DataFrame:
     # ===================================================================================
@@ -269,7 +269,8 @@ def build_mappings(
             molecular_weight = find_molecular_weight(properties["iupac_name"])  # type: ignore
         else:
             molecular_weight = find_molecular_weight(row["name"])
-        mmol = mg_to_mmol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0  # type: ignore
+        mol = g_to_mol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0  # type: ignore
+        mmol = mol * 1000.0  # convert mol to mmol
         row["mmol_concentration"] = mmol  # type: ignore
 
         # Extract flux_upper_bound if present
@@ -301,7 +302,7 @@ def build_mappings(
             if df.empty:
                 alert(
                     f"Could not find compound name:'{subcompound}' for compound '{compound_name}' in mappings.",
-                    halt_on_error=halt_on_not_found,
+                    halt_on_error=halt_on_error,
                 )
                 continue
             if df.shape[0] > 1:
@@ -322,13 +323,15 @@ def build_mappings(
             compounds.append({"compound": compound, "mapping_row": existing_row})
 
         # total_molar_mass = sum(info["molar_mass"] for compound_entry in compounds for info in compound_entry["info"])
+        #  molecular_weight in g/mol
         total_molar_mass = sum(compound_entry["compound"].molecular_weight for compound_entry in compounds)
         for compound_entry in compounds:
             compound = compound_entry["compound"]
             existing_row = compound_entry["mapping_row"]
-
+            #  molecular_weight in g/mol
             ratio = compound.molecular_weight / total_molar_mass if total_molar_mass > 0 else 0.0
-            # Adjust mass_per_litre based on ratio. The mass_per_litre is additive for compounds.
+            # Adjust mass_per_litre based on ratio.
+            # IMPORTANT: The mass_per_litre is additive for compounds.
             mass_per_litre = properties.get("mass_per_litre", 0.0)
             corrected_mass_per_litre = float(mass_per_litre) * ratio + existing_row.get("mass_per_litre", 0.0)
             # New row properties
@@ -357,11 +360,11 @@ def build_mappings(
                 rows = create_new_rows_for_compounds(df_mapping, name, properties)
                 # Update or append to df_mapping
                 for row in rows:
-                    df_mapping = update_mapping_df_by_row(df_mapping, row, halt_on_not_found=halt_on_not_found)
+                    df_mapping = update_mapping_df_by_row(df_mapping, row, halt_on_not_found=halt_on_error)
             else:
                 row = create_new_row(name, properties)
                 # Update or append to df_mapping
-                df_mapping = update_mapping_df_by_row(df_mapping, row, halt_on_not_found=halt_on_not_found)
+                df_mapping = update_mapping_df_by_row(df_mapping, row, halt_on_not_found=halt_on_error)
         return df_mapping
 
     # ===================================================================================
@@ -431,23 +434,36 @@ def build_mappings(
     df_mapping = update_df_mappings(unique_supplements_mapping, df_mapping)
 
     # ===================================================================================
-    # Sanity check: among UPDATED records that are not UNSTATED source, ensure that
-    # for each group of exchange_reaction, only one is defined as MEDIUM, SUPPLEMENT, or FIXED.
+    # Sanity check: make sure there is one fixed record per exchange reaction
+    fixed_exchanges = df_mapping.loc[df_mapping["source"] == MediumSource.FIXED.value, "exchange_reaction"].unique()
+    for exchange in fixed_exchanges:
+        df_fixed = df_mapping.loc[
+            (df_mapping["exchange_reaction"] == exchange) & (df_mapping["source"] == MediumSource.FIXED.value), :
+        ]
+        if df_fixed.shape[0] > 1:
+            alert(
+                f"Sanity check warning: Multiple FIXED records found for exchange reaction:'{exchange}': \n{df_fixed.to_string()}. "
+                f"Please ensure only one FIXED record per exchange reaction.",
+                halt_on_error=halt_on_error,
+            )
+    # ===================================================================================
+    # Sanity check: among UPDATED records that are UPDATED source, ensure that
+    # for each group of exchange_reaction, only one is defined as MEDIUM or FIXED.
     # If multiple are found, warn the user.
     # Note: the precedence order is SUPPLEMENT > MEDIUM > FIXED > UNSTATED
     df_sanity = df_mapping[
         (
             (df_mapping["record_origin"] == RecordOrigin.UPDATED.value)
-            & (df_mapping["source"] != MediumSource.UNSTATED.value)
+            & ((df_mapping["source"] == MediumSource.MEDIUM.value) | (df_mapping["source"] == MediumSource.FIXED.value))
         )
     ]
     grouped = df_sanity.groupby("exchange_reaction")
     for exchange_reaction, group in grouped:
         if group.shape[0] > 1:
             sources = group["source"].unique()
-            if len(sources) > 1:
+            if len(sources) != group.shape[0]:
                 alert(
-                    f"Sanity check warning: Multiple sources found for exchange reaction:'{exchange_reaction}': {sources}. "
+                    f"Sanity check warning: Multiple sources found for exchange reaction:'{exchange_reaction}': \n{group.to_string()}. "
                     f"Please ensure only one of them is defined as SUPPLEMENT, MEDIUM, or FIXED.",
                     halt_on_error=False,
                 )
@@ -458,7 +474,13 @@ def build_mappings(
     # sort the dataframe by exchange_reaction
     df_mapping = df_mapping.sort_values(by=["exchange_reaction"]).reset_index(drop=True)
     if verbose:
-        df_report = df_sanity.sort_values(by=["source", "exchange_reaction"]).reset_index(drop=True)
+        df_report = df_mapping[
+            (
+                (df_mapping["record_origin"] == RecordOrigin.UPDATED.value)
+                & (df_mapping["source"] != MediumSource.UNSTATED.value)
+            )
+        ]
+        df_report = df_report.sort_values(by=["source", "exchange_reaction"]).reset_index(drop=True)
         logging.info(f"Final updated mapping dataframe:\n{df_report.to_string()}")
     # ===================================================================================
     return df_mapping
@@ -471,8 +493,12 @@ def build_supplement_flux_dataframe(
     success_column: str = "success",
     max_od600_column: str = "max_value",
     max_time_column: str = "max_time",
+    supplement_column: str = "supplements",
+    media_volume_column: str = "media_volume_uL",
+    supplement_volume_column: str = "supplement_volume_uL",
     total_volume_column: str = "total_volume_uL",
     od600_conversion_rate: float = 0.4,
+    separator: str = ";",
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
     # ==================================================================================
@@ -483,7 +509,7 @@ def build_supplement_flux_dataframe(
     # Create dictionary and lists for supplements, mediums, fixed exchanges
 
     # Create a dictionary of all sources that are either supplement, medium, or fixed
-    valid_mappinsgs = mappings_df.loc[
+    valid_mappings = mappings_df.loc[
         (
             (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
             | (mappings_df["source"] == MediumSource.MEDIUM.value)
@@ -492,7 +518,9 @@ def build_supplement_flux_dataframe(
         & (mappings_df["source"] != MediumSource.UNSTATED.value),
         :,
     ]
-    all_exchanges = valid_mappinsgs["exchange_reaction"]
+    all_exchanges = valid_mappings["exchange_reaction"]
+    supplement_mappings = valid_mappings.loc[(valid_mappings["source"] == MediumSource.SUPPLEMENT.value), :]
+    medium_mappings = valid_mappings.loc[(valid_mappings["source"] == MediumSource.MEDIUM.value), :]
     # createlists of exchanges
     supplement_exchanges = mappings_df.loc[
         (mappings_df["source"] == MediumSource.SUPPLEMENT.value), "exchange_reaction"
@@ -505,10 +533,13 @@ def build_supplement_flux_dataframe(
     # Build dataframe columns for all exchanges and initialize to zero
     columns: dict[str, float] = dict.fromkeys(all_exchanges, 0.0)
 
-    def calculate_flux(mapping_row):
-        exchange_reaction = mapping_row["exchange_reaction"].values[0]
-        mmol_value = mapping_row["mmol_concentration"].values[0]
-        flux_upper_bound = mapping_row["flux_upper_bound"].values[0]
+    def calculate_flux(mapping_row, df_row, index: int = 0) -> tuple[str, float, float]:
+        exchange_reaction = mapping_row["exchange_reaction"].values[index]
+        mmol_value = mapping_row["mmol_concentration"].values[index]
+        flux_upper_bound = mapping_row["flux_upper_bound"].values[index]
+        # supplement_volume_value = df_row[supplement_volume_column]
+        # media_volume_value = df_row[media_volume_column]
+        total_volume_value = df_row[total_volume_column]
         # ensure column exists
         # if exchange_reaction not in new_row:
         #     new_row[exchange_reaction] = 0.0
@@ -518,11 +549,20 @@ def build_supplement_flux_dataframe(
         avg_od600 = max_od / 2
         # od600 to gCDW per litre
         gCWD_per_litre = od600_to_gCDW(avg_od600, od600_conversion_rate)  # noqa: N806
+        #
         # gCWD per liter to gCWD
         gCWD = (  # noqa: N806
-            gCWD_per_litre * (existing_row.get(total_volume_column, 1.0) / 1e6)  # convert uL to L  # noqa: N806
+            gCWD_per_litre * (total_volume_value / 1e6)  # convert uL to L  # noqa: N806
         )
-        return exchange_reaction, flux_upper_bound, mmol_value / (gCWD * max_time) if gCWD > 0 and max_time > 0 else 0.0
+        # return exchange_reaction, flux_upper_bound, mmol_value / (gCWD * max_time) if gCWD > 0 and max_time > 0 else 0.0
+        # return (
+        #     exchange_reaction,
+        #     flux_upper_bound,
+        #     mmol_value / (gCWD_per_litre * (total_volume_value / 1e6) * max_time) if gCWD > 0 and max_time > 0 else 0.0,
+        # )
+        return exchange_reaction, flux_upper_bound, mmol_value / max_time if max_time > 0 else 0.0
+        # return exchange_reaction, flux_upper_bound, mmol_value
+        # return exchange_reaction, flux_upper_bound, mmol_value / gCWD if gCWD > 0 else 0.0
 
     # Build rows with mmol values
     rows: list[dict[str, float]] = []
@@ -544,22 +584,42 @@ def build_supplement_flux_dataframe(
                 new_row[column] = flux_upper_bound
             #
             if column in mediums_exchanges.values:
-                mapping_row = valid_mappinsgs.loc[valid_mappinsgs["exchange_reaction"] == column]
+                mapping_row = medium_mappings.loc[medium_mappings["exchange_reaction"] == column]
                 if mapping_row.empty:
                     continue
 
-                exchange_reaction, _, flux = calculate_flux(mapping_row)
+                exchange_reaction, _, flux = calculate_flux(mapping_row, existing_row)
                 # flux in mmol / gCWD / time
                 new_row[exchange_reaction] = flux
             #
             if column in supplement_exchanges.values:
-                mapping_row = valid_mappinsgs.loc[valid_mappinsgs["exchange_reaction"] == column]
+                mapping_row = supplement_mappings.loc[supplement_mappings["exchange_reaction"] == column]
                 if mapping_row.empty:
                     continue
+                #
+                supps_vals = existing_row.get(supplement_column, [])
+                parts = [s.strip().lower() for s in str(supps_vals).split(separator) if s.strip()]
+                names = [
+                    supplement_mappings.loc[
+                        (supplement_mappings["name"] == part) | (supplement_mappings["iupac_name"] == part),
+                        "exchange_reaction",
+                    ].values
+                    for part in parts
+                ]
+                names = {item for sublist in names for item in sublist}  # flatten and unique
 
-                exchange_reaction, _, flux = calculate_flux(mapping_row)
-                # flux in mmol / gCWD / time
-                new_row[exchange_reaction] = flux
+                if column in names:
+                    mapping_row = pd.concat([mapping_row.loc[mapping_row["name"] == part, :] for part in parts])
+                    if mapping_row.shape[0] > 1:
+                        logging.warning(
+                            f"Multiple mapping rows found for supplement exchange:'{column}' for parts:{parts}. Using the first one.\n"
+                            f"{mapping_row.to_string()}"
+                        )
+                    exchange_reaction, _, flux = calculate_flux(mapping_row, existing_row)
+                    # flux in mmol / gCWD / time
+                    new_row[exchange_reaction] = flux
+                else:
+                    new_row[column] = 0
 
         rows.append(new_row)
 
