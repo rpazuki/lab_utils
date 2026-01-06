@@ -80,7 +80,7 @@ pipelines:
                     value_col: log_od_od0
                     group_cols:
                         - well
-                    save_plot_data: false
+                    save_plot_data: true
 
 
         Outputs:
@@ -130,15 +130,31 @@ pipelines:
             # Calculate replicates statistics
             - df_replicate_stats:  # output dataframe name
                 package: labUtils.media_bot
-                method: calculate_replicate_statistics
+                method: calculate_replicate_statistics_by_custom
                 parameters:
                     df_parsed: df_parsed # The 'df_parsed' that was created above
-                    direction: alphabetical # along A, B, C, ...
-                    sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                    strain_pattern: "[A-Za-z]+" # Example: "strainA1", "strainA2" -> grouped as "strainA"
+                    custom_rules:
+                        SLAB:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        purB:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        ilvI:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        WT:
+                            direction: alphabetical
+                            sample_size: 2 # e.g A1, A2 - B1, B2
+                        BLANK:
+                            direction: alphabetical
+                            sample_size: 1 # e.g A1 - B1
+
                     ddof: 0 # Biased std
                     value_column_name: od600 # The column name for OD values in df_parsed dataframe
             #####################################
-            # Transform OD to log(OD/OD_0)
+            # # Transform OD to log(OD/OD_0)
             - df_transformed:  # output dataframe name
                 package: labUtils.growth_rates
                 method: transform_to_log_n_n0
@@ -149,8 +165,8 @@ pipelines:
                     OD_0_averaging_window: 4 # The OD_0 is defined based on the first 4 time points
                     group_cols: # columns defining each growth series
                         - group_id
-            #####################################
-            # Fit modified Gompertz model to each growth series
+            # #####################################
+            # # Fit modified Gompertz model to each growth series
             - df_fit_modified_gompertz:  # output dataframe name
                 package: labUtils.growth_rates
                 method: fit_modified_gompertz_per_series
@@ -164,9 +180,9 @@ pipelines:
                         - group_id
                     fixed_params:
                         y0: 0.0 # Fix y0 to 0.0
-            #####################################
-            # Fit max growth rate using moving window
-            # and smoothing to each growth series
+            # #####################################
+            # # Fit max growth rate using moving window
+            # # and smoothing to each growth series
             - df_fit_max_growth_rate:
                 package: labUtils.growth_rates
                 method: fit_max_growth_rate_per_series
@@ -179,8 +195,8 @@ pipelines:
                     moving_window_size: 5
                     smoothing_iterations: 4
                     smooth_window_size: 2
-            #####################################
-            # Combine modified Gompertz fit and max growth rate fit
+            # #####################################
+            # # Combine modified Gompertz fit and max growth rate fit
             - df_combined_fit:
                 package: labUtils.utils
                 method: smart_join_drop_right
@@ -189,8 +205,8 @@ pipelines:
                     right_df: df_fit_modified_gompertz
                     on_cols:
                         - group_id
-            #####################################
-            # Predict modified Gompertz model to each growth series
+            # #####################################
+            # # Predict modified Gompertz model to each growth series
             - df_predict_modified_gompertz:
                 package: labUtils.growth_rates
                 method: predict_modified_gompertz_per_series
@@ -202,7 +218,7 @@ pipelines:
                     standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
                     group_cols: # columns defining each growth series
                         - group_id
-                    save_plot_data: false
+                    save_plot_data: true
 
         Outputs:
             #####################################
@@ -314,26 +330,54 @@ pipelines:
                     # standard_deviation_column: od600_std # The column name for standard deviation of OD values in df_replicate_stats dataframe
                     group_cols: # columns defining each growth series
                         - well
-                    save_plot_data: false
+                    save_plot_data: true
 
             #####################################
             # Calculate replicates statistics
             - df_replicate_stats:  # output dataframe name
                 package: labUtils.media_bot
-                method: calculate_replicate_statistics
+                method: calculate_replicate_statistics_by_custom
                 parameters:
                     df_parsed: df_combined_fit # The 'df_combined_fit' that was created above
-                    direction: alphabetical # along A, B, C, ...
-                    sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                    custom_rules:
+                        SLAB:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        purB:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        ilvI:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        WT:
+                            direction: alphabetical
+                            sample_size: 2 # e.g A1, A2 - B1, B2
+                        BLANK:
+                            direction: alphabetical
+                            sample_size: 1 # e.g A1 - B1
                     ddof: 0 # Biased std
                     value_column_name: mu_max # The column name for OD values in df_combined_fit dataframe
             - df_replicate_stats_mv:  # output dataframe name
                 package: labUtils.media_bot
-                method: calculate_replicate_statistics
+                method: calculate_replicate_statistics_by_custom
                 parameters:
                     df_parsed: df_combined_fit # The 'df_combined_fit' that was created above
-                    direction: alphabetical # along A, B, C, ...
-                    sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                    custom_rules:
+                        SLAB:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        purB:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        ilvI:
+                            direction: alphabetical
+                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
+                        WT:
+                            direction: alphabetical
+                            sample_size: 2 # e.g A1, A2 - B1, B2
+                        BLANK:
+                            direction: alphabetical
+                            sample_size: 1 # e.g A1 - B1
                     ddof: 0 # Biased std
                     value_column_name: mv_mu_max # The column name for OD values in df_combined_fit dataframe
             - df_combined_fit_2:

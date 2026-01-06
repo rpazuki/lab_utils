@@ -1,4 +1,4 @@
-# calculate_replicate_statistics() Output Format
+# calculate_replicate_statistics_by_well() Output Format
 
 ## Function Returns
 
@@ -22,13 +22,13 @@ The function returns a DataFrame with **only averaged values**, not the original
 
 ```python
 from pathlib import Path
-from labUtils.media_bot import parse, calculate_replicate_statistics
+from labUtils.media_bot import parse, calculate_replicate_statistics_by_well
 
 # Parse raw data
 df = parse(raw_data_path, meta_data_path)
 
 # Calculate statistics for 3 wells along rows
-stats = calculate_replicate_statistics(
+stats = calculate_replicate_statistics_by_well(
     df,
     direction="alphabetical",  # or "alpha"
     sample_size=3,

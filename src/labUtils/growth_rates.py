@@ -641,16 +641,59 @@ def plot_and_save(
         first_key = keys if not isinstance(keys, tuple) else keys[0]
         if "mv_mu_max" in g.columns:
             plt.title(
-                f"Growth Curve for  well {first_key} \n"
-                f" growth_rate (moving window):{g['mv_mu_max'].iloc[0]:.4f} 1/h, "
-                f" growth_rate (Gompertz):{g['mu_max'].iloc[0]:.4f} 1/h \n"
-                f"y0={g['y0'].iloc[0]:.3f}, A={g['A'].iloc[0]:.3f}, lambda={g['lambda'].iloc[0]:.3f}"
+                f"Growth Curve for  well '{first_key}', Strain '{g['strain'].iloc[0]}' \n"
+                f"Supplement(s): '{g['supplements'].iloc[0][:100]}'\n"
+                f" GM-MV*: {g['mv_mu_max'].iloc[0]:.3f} "
+                r"$\frac{1}{H}$, "
+                f" GM-G**: {g['mu_max'].iloc[0]:.3f} "
+                r"$\frac{1}{H}$, "
+                r"$y_0$: "
+                f"{g['y0'].iloc[0]:.3f}, "
+                r"$A$:"
+                f" {g['A'].iloc[0]:.3f}, "
+                r"$\lambda$:"
+                f" {g['lambda'].iloc[0]:.3f}"
+            )
+            # Plot a box outside the axis at right bottom side
+            # and write a text inside it as legend
+            textstr = "*GM-MV: Maximum Growth Rate from Moving Window\n**GM-G: Maximum Growth Rate from Gompertz Fit"
+            props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+            plt.gca().text(
+                0.98,
+                0.02,
+                textstr,
+                transform=plt.gca().transAxes,
+                fontsize=10,
+                verticalalignment="bottom",
+                horizontalalignment="right",
+                bbox=props,
             )
         else:
             plt.title(
-                f"Growth Curve for  well {first_key} \n"
-                f" growth_rate:{g['mu_max'].iloc[0]:.4f} 1/h \n"
-                f"y0={g['y0'].iloc[0]:.3f}, A={g['A'].iloc[0]:.3f}, lambda={g['lambda'].iloc[0]:.3f}"
+                f"Growth Curve for  well '{first_key}', Strain '{g['strain'].iloc[0]}' \n"
+                f"Supplement(s): '{g['supplements'].iloc[0][:100]}'\n"
+                f" GM*: {g['mu_max'].iloc[0]:.3f} "
+                r"$\frac{1}{H}$, "
+                r"$y_0$: "
+                f"{g['y0'].iloc[0]:.3f}, "
+                r"$A$:"
+                f"{g['A'].iloc[0]:.3f}, "
+                r"$\lambda$:"
+                f" {g['lambda'].iloc[0]:.3f}"
+            )
+            # Plot a box outside the axis at right bottom side
+            # and write a text inside it as legend
+            textstr = "*GM: Maximum Growth Rate"
+            props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+            plt.gca().text(
+                0.98,
+                0.02,
+                textstr,
+                transform=plt.gca().transAxes,
+                fontsize=10,
+                verticalalignment="bottom",
+                horizontalalignment="right",
+                bbox=props,
             )
         plt.legend()
         # plt.ylim(bottom=0)

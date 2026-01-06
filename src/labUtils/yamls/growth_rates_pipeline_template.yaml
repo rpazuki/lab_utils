@@ -38,7 +38,7 @@ pipelines:
             # Calculate replicates statistics
             - df_replicate_stats:  # output dataframe name
                 package: labUtils.media_bot
-                method: calculate_replicate_statistics
+                method: calculate_replicate_statistics_by_well
                 parameters:
                     df_parsed: df_parsed # The 'df_parsed' that was created above
                     direction: alphabetical # along A, B, C, ...

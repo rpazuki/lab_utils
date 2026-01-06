@@ -50,7 +50,7 @@ def load_file_mapping(file_path):
             raise ValueError("CSV file must have exactly 2 columns (metadata_file, raw_data_file)")
 
         # Convert to dictionary using first column as key, second as value
-        return dict(zip(df.iloc[:, 0], df.iloc[:, 1]))
+        return dict(zip(df.iloc[:, 0], df.iloc[:, 1]))  # noqa: B905
 
     elif file_path.suffix.lower() in [".yaml", ".yml"]:
         # Load YAML file

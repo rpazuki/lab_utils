@@ -20,7 +20,8 @@ __all__ = [
     "parse",
     "report",
     "parse_time_label",
-    "calculate_replicate_statistics",
+    "calculate_replicate_statistics_by_well",
+    "calculate_replicate_statistics_by_custom",
 ]
 
 
@@ -95,7 +96,7 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
         tail = raw_cells[3:]
         if tail and tail[0].lower() == "time":
             tail = tail[1:]
-        times = [c for c in tail]
+        times = [c for c in tail]  # noqa: C416
 
     times = times[:n_data_cols]
     final_cols = cols_fixed + times
@@ -218,7 +219,7 @@ def parse(raw_data: pd.DataFrame | Path, meta_data: pd.DataFrame | Path, value_c
     else:
         raw_long = raw_data
 
-    if isinstance(meta_data, Path):
+    if isinstance(meta_data, Path):  # noqa: SIM108
         meta = parse_protocol_metadata(meta_data)
     else:
         meta = meta_data
@@ -305,7 +306,7 @@ def report(
     return pd.DataFrame(report_rows)
 
 
-def calculate_replicate_statistics(
+def calculate_replicate_statistics_by_well(
     df_parsed: pd.DataFrame,
     direction: str = "alphabetical",
     sample_size: int = 3,
@@ -362,17 +363,17 @@ def calculate_replicate_statistics(
     Examples
     --------
     >>> # Average 3 wells along rows (A1, A2, A3), (A4, A5, A6), etc.
-    >>> stats_df = calculate_replicate_statistics(
+    >>> stats_df = calculate_replicate_statistics_by_well(
     ...     df, direction="alphabetical", sample_size=3
     ... )
 
     >>> # Average 4 wells along columns (A1, B1, C1, D1), etc.
-    >>> stats_df = calculate_replicate_statistics(
+    >>> stats_df = calculate_replicate_statistics_by_well(
     ...     df, direction="numerical", sample_size=4
     ... )
 
     >>> # Use population standard deviation (biased)
-    >>> stats_df = calculate_replicate_statistics(
+    >>> stats_df = calculate_replicate_statistics_by_well(
     ...     df, direction="alphabetical", sample_size=3, ddof=0
     ... )
 
@@ -531,3 +532,315 @@ def calculate_replicate_statistics(
         stats_df = stats_df.rename(columns={first_col: first_col[:-6]})  # Remove '_first' suffix
 
     return stats_df
+
+
+def calculate_replicate_statistics_by_custom(
+    df_parsed: pd.DataFrame,
+    strain_pattern: str | None = r"[A-Za-z]+",
+    custom_rules: dict[str, dict[str, int | str]] | None = None,
+    ddof: int = 1,
+    value_column_name: str = "od",
+) -> pd.DataFrame:
+    """Calculate mean and standard deviation with custom rules per strain group.
+
+    This function combines strain-based grouping with custom direction and sample_size
+    rules for each strain. It first extracts strain groups using a regex pattern, then
+    applies specific aggregation rules (direction and sample_size) defined for each strain.
+
+    Parameters
+    ----------
+    df_parsed : pd.DataFrame
+        DataFrame returned by the `parse()` function, must contain columns:
+        'well', 'well_row', 'well_col', 'strain', value column, and time-related columns
+    strain_pattern : str | None, optional
+        Regex pattern to extract the grouping key from the 'strain' column.
+        Default is r"[A-Za-z]+" (extracts alphabetical part only).
+        Example: "strainA1", "strainA2" -> grouped as "strainA"
+        If None, uses strain values as-is without pattern extraction.
+    custom_rules : dict[str, dict[str, int | str]] | None, optional
+        Dictionary mapping strain names to their aggregation rules.
+        Each strain can have custom 'direction' and 'sample_size' settings.
+        Format: {
+            "strainA": {"direction": "alphabetical", "sample_size": 3},
+            "strainB": {"direction": "numerical", "sample_size": 4}
+        }
+        If a strain is not in custom_rules, it will be skipped.
+        If None, an empty dict is used (no strains processed).
+    ddof : int, optional
+        Delta Degrees of Freedom for standard deviation calculation:
+        - ddof=1 (default): Unbiased estimator (sample standard deviation, N-1)
+        - ddof=0: Biased estimator (population standard deviation, N)
+    value_column_name : str, optional
+        Name of the value column to calculate statistics on (default: "od")
+        Must match the column name in the input DataFrame
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with averaged statistics containing:
+        - strain_group: Identifier for the strain group
+        - group_id: Identifier for the replicate group within strain (e.g., "A_1-3", "ABC_1")
+        - wells: Comma-separated list of wells included in the group
+        - well_rows: Comma-separated list of well rows in the group
+        - well_cols: Comma-separated list of well columns in the group
+        - {value_column_name}_mean: Mean value across replicates
+        - {value_column_name}_std: Standard deviation across replicates
+        - n_replicates: Number of non-null values used in calculation
+        - Time columns and metadata columns (if present in input)
+
+    Raises
+    ------
+    ValueError
+        - If required columns are missing from the DataFrame
+        - If direction in custom_rules is invalid
+        - If sample_size in custom_rules is less than 1
+        - If the number of wells for a strain is not divisible by its sample_size
+
+    Examples
+    --------
+    >>> # Define custom rules for different strains
+    >>> custom_rules = {
+    ...     "strainA": {"direction": "alphabetical", "sample_size": 3},
+    ...     "strainB": {"direction": "numerical", "sample_size": 4},
+    ...     "control": {"direction": "alphabetical", "sample_size": 6}
+    ... }
+    >>> stats_df = calculate_replicate_statistics_by_custom(
+    ...     df, strain_pattern=r"[A-Za-z]+", custom_rules=custom_rules
+    ... )
+
+    >>> # Use full strain names without pattern extraction
+    >>> custom_rules = {
+    ...     "strain_A_rep1": {"direction": "alphabetical", "sample_size": 3},
+    ...     "strain_B_rep1": {"direction": "numerical", "sample_size": 3}
+    ... }
+    >>> stats_df = calculate_replicate_statistics_by_custom(
+    ...     df, strain_pattern=None, custom_rules=custom_rules
+    ... )
+
+    Notes
+    -----
+    - Each strain group is processed independently with its own rules
+    - For each strain, wells are grouped according to its direction and sample_size
+    - Results from all strains are concatenated into a single DataFrame
+    - Only strains defined in custom_rules are processed
+    - The function internally calls logic similar to calculate_replicate_statistics_by_well
+      for each strain group
+    """
+    # Validate input DataFrame
+    required_cols = ["well", "well_row", "well_col", "strain", value_column_name]
+    missing_cols = [col for col in required_cols if col not in df_parsed.columns]
+    if missing_cols:
+        raise ValueError(f"DataFrame is missing required columns: {missing_cols}")
+
+    # Handle empty custom_rules
+    if custom_rules is None:
+        custom_rules = {}
+
+    if not custom_rules:
+        # Return empty DataFrame with expected columns
+        return pd.DataFrame(
+            columns=[
+                "strain_group",
+                "group_id",
+                "wells",
+                "well_rows",
+                "well_cols",
+                f"{value_column_name}_mean",
+                f"{value_column_name}_std",
+                "n_replicates",
+            ]
+        )
+
+    # Create a copy to avoid modifying the original
+    df_with_groups = df_parsed.copy()
+
+    # Apply pattern extraction if specified
+    if strain_pattern is not None:
+        df_with_groups["strain_group"] = (
+            df_with_groups["strain"].astype(str).str.extract(f"({strain_pattern})", expand=False)
+        )
+    else:
+        df_with_groups["strain_group"] = df_with_groups["strain"]
+
+    # Identify time columns for grouping
+    time_cols = [
+        col for col in ["time_label", "time_h", "time_min", "time_h_int", "time_min_int"] if col in df_parsed.columns
+    ]
+
+    # Process each strain according to its custom rules
+    all_results = []
+
+    for strain_name, rules in custom_rules.items():
+        # Filter data for this strain
+        strain_df = df_with_groups[df_with_groups["strain_group"] == strain_name].copy()
+
+        if len(strain_df) == 0:
+            continue  # Skip if no data for this strain
+
+        # Extract rules
+        direction = rules.get("direction", "alphabetical")
+        sample_size = rules.get("sample_size", 3)
+
+        # Validate direction
+        direction = direction.lower()  # type: ignore
+        if direction not in ["alphabetical", "alpha", "numerical", "num"]:
+            raise ValueError(
+                f"Invalid direction '{direction}' for strain '{strain_name}'. "
+                f"Must be 'alphabetical'/'alpha' or 'numerical'/'num'"
+            )
+
+        # Validate sample_size
+        if sample_size < 1:  # type: ignore
+            raise ValueError(f"sample_size must be at least 1 for strain '{strain_name}', got {sample_size}")
+
+        # Determine grouping direction
+        is_alphabetical = direction in ["alphabetical", "alpha"]
+
+        # Get unique wells and sort them appropriately
+        unique_wells = strain_df[["well", "well_row", "well_col"]].drop_duplicates()
+
+        if is_alphabetical:
+            # Sort by row then column (A1, A2, A3, ..., B1, B2, B3, ...)
+            unique_wells = unique_wells.sort_values(["well_row", "well_col"]).reset_index(drop=True)
+            n_positions = len(unique_wells["well_row"].unique())
+            position_name = "rows"
+        else:
+            # Sort by column then row (A1, B1, C1, ..., A2, B2, C2, ...)
+            unique_wells = unique_wells.sort_values(["well_col", "well_row"]).reset_index(drop=True)
+            n_positions = len(unique_wells["well_col"].unique())
+            position_name = "columns"
+
+        # Check if divisible by sample_size
+        if len(unique_wells) % sample_size != 0:  # type: ignore
+            raise ValueError(
+                f"Strain '{strain_name}': Number of wells ({len(unique_wells)}) is not divisible by "
+                f"sample_size ({sample_size}). Total {position_name}: {n_positions}"
+            )
+
+        # Create group assignments
+        unique_wells["group_num"] = unique_wells.index // sample_size  # type: ignore
+
+        # Merge group assignments back to strain dataframe
+        strain_df = strain_df.merge(unique_wells[["well", "group_num"]], on="well", how="left")
+
+        # Group by group_num and time, then calculate statistics
+        group_cols = ["group_num"] + time_cols
+
+        # Calculate statistics
+        agg_dict = {
+            value_column_name: [
+                (f"{value_column_name}_mean", "mean"),
+                (f"{value_column_name}_std", lambda x: x.std(ddof=ddof)),
+                ("count", "count"),
+            ],
+            "well": [("wells", lambda x: ",".join(sorted(set(x))))],
+            "well_row": [("well_rows", lambda x: ",".join(sorted(set(x))))],
+            "well_col": [("well_cols", lambda x: ",".join(sorted(set(map(str, x)))))],
+            "strain_group": "first",
+        }
+
+        # Include metadata columns from first well in each group
+        metadata_cols = [
+            col
+            for col in df_parsed.columns
+            if col not in required_cols + time_cols + ["content", "group_num", "strain_group"]
+        ]
+        for col in metadata_cols:
+            if col in strain_df.columns:
+                agg_dict[col] = "first"
+
+        stats_df = strain_df.groupby(group_cols, as_index=False).agg(agg_dict)
+
+        # Flatten column names
+        new_cols = []
+        for col in stats_df.columns:
+            if isinstance(col, tuple):
+                if col[0] == value_column_name:
+                    new_cols.append(col[1])  # Use the renamed name directly (e.g., od_mean, od_std)
+                elif col[0] in ["well", "well_row", "well_col"]:
+                    new_cols.append(col[1])  # Use the renamed names (wells, well_rows, well_cols)
+                elif col[0] == "strain_group":
+                    new_cols.append("strain_group")  # Keep strain_group as is
+                else:
+                    new_cols.append(col[0] if not col[1] else f"{col[0]}_{col[1]}")
+            else:
+                new_cols.append(col)
+        stats_df.columns = new_cols
+
+        # Rename count column
+        stats_df = stats_df.rename(columns={"count": "n_replicates"})
+
+        # Create group_id column
+        def create_group_id(row):
+            wells_list = row["wells"].split(",")
+            if is_alphabetical:  # noqa: B023
+                # For alphabetical: use row letter and column range (e.g., "A_1-3")
+                row_letter = wells_list[0][0]  # Get row letter from first well
+                col_nums = [int(w[1:]) for w in wells_list]
+                if len(col_nums) == 1:
+                    return f"{row_letter}_{col_nums[0]}"
+                return f"{row_letter}_{min(col_nums)}-{max(col_nums)}"
+            else:
+                # For numerical: use row range and column number (e.g., "ABC_1")
+                row_letters = "".join([w[0] for w in wells_list])
+                col_num = wells_list[0][1:]  # Get column number from first well
+                return f"{row_letters}_{col_num}"
+
+        stats_df["group_id"] = stats_df.apply(create_group_id, axis=1)
+
+        # Drop group_num as it's internal
+        if "group_num" in stats_df.columns:
+            stats_df = stats_df.drop(columns=["group_num"])
+
+        all_results.append(stats_df)
+
+    # Concatenate all results
+    if not all_results:
+        # Return empty DataFrame with expected columns
+        return pd.DataFrame(
+            columns=[
+                "strain_group",
+                "group_id",
+                "wells",
+                "well_rows",
+                "well_cols",
+                f"{value_column_name}_mean",
+                f"{value_column_name}_std",
+                "n_replicates",
+            ]
+        )
+
+    final_df = pd.concat(all_results, ignore_index=True)
+
+    # Reorder columns for better readability
+    first_cols = [
+        "strain_group",
+        "group_id",
+        "wells",
+        "well_rows",
+        "well_cols",
+        f"{value_column_name}_mean",
+        f"{value_column_name}_std",
+        "n_replicates",
+    ]
+    first_cols = [col for col in first_cols if col in final_df.columns]
+    other_cols = [col for col in final_df.columns if col not in first_cols]
+    final_df = final_df[first_cols + other_cols]
+
+    # Sort by strain_group, group_id and time columns
+    sort_cols = ["strain_group", "group_id"]
+    for time_col in ["time_min", "time_h", "time_label"]:
+        if time_col in final_df.columns:
+            sort_cols.append(time_col)
+            break  # Use first available time column for sorting
+
+    final_df = final_df.sort_values(sort_cols).reset_index(drop=True)
+
+    # Remove "_first" suffix from columns names that have it
+    first_suffix_cols = [col for col in final_df.columns if col.endswith("_first")]
+    for first_col in first_suffix_cols:
+        final_df = final_df.rename(columns={first_col: first_col[:-6]})  # Remove '_first' suffix
+
+    final_df = final_df.rename(columns={"strain_group": "strain"})
+
+    return final_df
