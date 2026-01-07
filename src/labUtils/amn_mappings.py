@@ -742,6 +742,7 @@ def build_AMN_levels_dataframe(  # noqa: N802
     flux_df: pd.DataFrame,
     growth_rate_column: str = "mu_max",
     default_level: int = 1,
+    default_variable_level: int = 100,
     default_max_value: int = 1000,
     sbml_bounds: dict[str, tuple[int, int]] | None = None,
     custom_bounds: dict[str, tuple[int, int]] | None = None,
@@ -799,7 +800,7 @@ def build_AMN_levels_dataframe(  # noqa: N802
         elif trimmed_col in flux_upper_bounds and flux_upper_bounds.get(trimmed_col, 0.0) > 0.0:
             # Second priority: Use upper bound from mappings_df.flux_upper_bound in fluxes if available
             max_val = flux_upper_bounds.get(trimmed_col, 0)
-            template_data[col] = [default_level, max_val, 0]
+            template_data[col] = [default_variable_level, max_val, 0]
         elif sbml_bounds and col in sbml_bounds:
             # Third priority: SBML bounds
             level_val, max_val = sbml_bounds[col]

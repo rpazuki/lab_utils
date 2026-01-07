@@ -54,6 +54,7 @@ pipelines:
                     mappings_df : mapping_df
                     growth_rate_column: mu_max # The column name for growth rates in output dataframe
                     default_level: 1 # Default level
+                    default_variable_level: 100 # Default level for variable exchanges
                     flux_df: df_flux
                     exchange_suffix: _i
                     # custom_bounds: # level, max_value
