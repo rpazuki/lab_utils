@@ -750,7 +750,7 @@ def build_AMN_levels_dataframe(  # noqa: N802
 ) -> pd.DataFrame:
     # Create a dictionary of all flux upper bound where exchange are either supplement, medium, or fixed
     # the precedence order is SUPPLEMENT > MEDIUM > FIXED, and alll UNSTATED are ignored
-    flux_upper_bounds = mappings_df.loc[
+    single_record_mappings_df = mappings_df.loc[
         (
             (mappings_df["source"] == MediumSource.SUPPLEMENT.value)
             | (mappings_df["source"] == MediumSource.MEDIUM.value)
@@ -760,7 +760,7 @@ def build_AMN_levels_dataframe(  # noqa: N802
         :,
     ]
     # group by exchange_reaction and select the supplement > medium > fixed
-    flux_upper_bounds = flux_upper_bounds.sort_values(
+    single_record_mappings_df = single_record_mappings_df.sort_values(
         by=["exchange_reaction", "source"],
         key=lambda x: x.map(
             {
@@ -771,12 +771,16 @@ def build_AMN_levels_dataframe(  # noqa: N802
         ),
     )
 
-    flux_upper_bounds = flux_upper_bounds.drop_duplicates(subset=["exchange_reaction"], keep="first")
+    single_record_mappings_df = single_record_mappings_df.drop_duplicates(subset=["exchange_reaction"], keep="first")
     # create the dictionary
     flux_upper_bounds = (
-        mappings_df[["exchange_reaction", "flux_upper_bound"]]
+        single_record_mappings_df[["exchange_reaction", "flux_upper_bound"]]
         .set_index("exchange_reaction")["flux_upper_bound"]
         .to_dict()
+    )
+
+    flux_sources = (
+        single_record_mappings_df[["exchange_reaction", "source"]].set_index("exchange_reaction")["source"].to_dict()
     )
     # Override with flux_df values if provided and greater than zero
     for col in flux_df.columns:
@@ -800,7 +804,10 @@ def build_AMN_levels_dataframe(  # noqa: N802
         elif trimmed_col in flux_upper_bounds and flux_upper_bounds.get(trimmed_col, 0.0) > 0.0:
             # Second priority: Use upper bound from mappings_df.flux_upper_bound in fluxes if available
             max_val = flux_upper_bounds.get(trimmed_col, 0)
-            template_data[col] = [default_variable_level, max_val, 0]
+            if flux_sources.get(trimmed_col, "") == MediumSource.FIXED.value:
+                template_data[col] = [1, max_val, 0]
+            else:
+                template_data[col] = [default_variable_level, max_val, 0]
         elif sbml_bounds and col in sbml_bounds:
             # Third priority: SBML bounds
             level_val, max_val = sbml_bounds[col]

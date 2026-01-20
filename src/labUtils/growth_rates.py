@@ -408,7 +408,7 @@ def fit_modified_gompertz_per_series(
             r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
             rmse = float(np.sqrt(ss_res / max(1, len(y) - len(popt))))
 
-            #
+            # Store maximum value and time of maximum OD value
             max_value_index = np.nanargmax(y)
             max_value = y[max_value_index]
             if value_is_log_transformed:
