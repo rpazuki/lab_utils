@@ -53,8 +53,9 @@ pipelines:
                     exchange_matrix: df_AMN_input # The 'df_AMN_input' input defined above
                     mappings_df : mapping_df
                     growth_rate_column: mu_max # The column name for growth rates in output dataframe
-                    default_level: 1 # Default level
-                    default_variable_level: 100 # Default level for variable exchanges
+                    default_max_value: 20 # Default max value for fixed and medium exchanges
+                    default_level: 1 # Default level for fixed and medium exchanges
+                    default_variable_level: 20 # Default level for supplement exchanges
                     flux_df: df_flux
                     exchange_suffix: _i
                     # custom_bounds: # level, max_value
@@ -62,6 +63,13 @@ pipelines:
                     #     EX_ade_e_i: [100, 10]
                     #     EX_succ_e_i: [100, 10]
                     #     EX_ura_e_i: [100, 10]
+            - df_AMN_level_combinations:
+                package: labUtils.amn_mappings
+                method: build_AMN_levels_for_different_levels
+                parameters:
+                    df_AMN_levels: df_AMN_level
+                    fixed_levels: [20, 50 , 100]
+                    fixed_max_values: [2, 20]
         Outputs:
             #####################################
             # List of output dataframes to save
@@ -69,5 +77,6 @@ pipelines:
             - mapping_df: mappings.csv
             - df_flux: df_flux.csv
             - df_AMN_input: df_AMN_input.csv
-            - df_AMN_level: df_AMN_level.csv
+            - df_AMN_level: df_AMN_actual_medium_level.csv
+            - df_AMN_level_combinations: [df_AMN_level_20_max_2.csv, df_AMN_level_20_max_20.csv, df_AMN_level_50_max_2.csv, df_AMN_level_50_max_20.csv, df_AMN_level_100_max_2.csv, df_AMN_level_100_max_20.csv]
 

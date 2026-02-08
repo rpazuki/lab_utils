@@ -557,13 +557,13 @@ class OutputProcess(Process):
                     continue
                 for i, output_spec in enumerate(output_path):
                     if isinstance(payload_item[i], DataFrame):
-                        payload_item[i].to_csv(output_spec)
+                        payload_item[i].to_csv(output_spec, index=False)
                         continue
 
                     if isinstance(payload_item, tuple):
                         inner_item = payload_item[i]
                         if isinstance(inner_item, DataFrame):
-                            inner_item.to_csv(output_spec)
+                            inner_item.to_csv(output_spec, index=False)
                         else:
                             import json
 

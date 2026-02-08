@@ -217,6 +217,23 @@ def fit_max_growth_rate_per_series(
             y_pred_max = slope_max * tw_max + intercept_max
             rmse = float(np.sqrt(np.mean((yw_max - y_pred_max) ** 2)))
 
+            # Get the time at which maximum growth rate occurred (middle of the window)
+            max_window_len = len(tw_max)
+            mid_idx = max_window_len // 2
+            if max_window_len % 2 == 1:
+                max_growth_rate_time = float(tw_max[mid_idx])
+                y_mid = float(yw_max[mid_idx])
+                n0_mid = float(n0s[max_growth_rate_index + mid_idx])
+            else:
+                max_growth_rate_time = float(0.5 * (tw_max[mid_idx - 1] + tw_max[mid_idx]))
+                y_mid = float(0.5 * (yw_max[mid_idx - 1] + yw_max[mid_idx]))
+                n0_mid = float(0.5 * (n0s[max_growth_rate_index + mid_idx - 1] + n0s[max_growth_rate_index + mid_idx]))
+
+            if value_is_log_transformed:
+                max_growth_rate_value = float(np.exp(y_mid) * n0_mid)
+            else:
+                max_growth_rate_value = y_mid
+
             out.update(
                 {
                     "success": True,
@@ -224,6 +241,8 @@ def fit_max_growth_rate_per_series(
                     "mv_mu_max": max_growth_rate,
                     "mv_r2": max_r2,  # r²
                     "mv_rmse": rmse,  # RMSE
+                    "mv_mu_max_time": max_growth_rate_time,  # Time at which max growth rate occurred
+                    "mv_mu_max_value": max_growth_rate_value,  # OD value at max growth rate time
                     "max_value": max_value,
                     "max_time": max_time,
                 }
@@ -415,6 +434,24 @@ def fit_modified_gompertz_per_series(
                 max_value = np.exp(max_value) * n0s[max_value_index]  # convert back to normal scale
             max_time = t[max_value_index]
 
+            # OD value at time of maximum growth rate (inflection point)
+            mu_max_time = float(fitted_params["lambda"])
+            y_mu = float(
+                gompertz(
+                    np.array([mu_max_time]),
+                    fitted_params["y0"],
+                    fitted_params["A"],
+                    fitted_params["mu_max"],
+                    fitted_params["lambda"],
+                    clip_exp,
+                )[0]
+            )
+            n0_base = float(n0s[0]) if len(n0s) > 0 else np.nan
+            if value_is_log_transformed:
+                mu_max_value = float(np.exp(y_mu) * n0_base)
+            else:
+                mu_max_value = y_mu
+
             out.update(
                 {
                     "success": True,
@@ -425,6 +462,8 @@ def fit_modified_gompertz_per_series(
                     "lambda": fitted_params["lambda"],
                     "r2": r2,
                     "rmse": rmse,
+                    "mu_max_time": mu_max_time,  # Time at which max growth rate occurs (inflection point)
+                    "mu_max_value": mu_max_value,  # OD value at max growth rate time
                     "max_value": max_value,
                     "max_time": max_time,
                 }

@@ -748,6 +748,12 @@ def build_AMN_levels_dataframe(  # noqa: N802
     custom_bounds: dict[str, tuple[int, int]] | None = None,
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
+    def trim(item: str) -> str:
+        if not exchange_suffix:
+            return item
+        l = len(exchange_suffix)
+        return item[:-l] if item[-l:] == exchange_suffix else item
+
     # Create a dictionary of all flux upper bound where exchange are either supplement, medium, or fixed
     # the precedence order is SUPPLEMENT > MEDIUM > FIXED, and alll UNSTATED are ignored
     single_record_mappings_df = mappings_df.loc[
@@ -784,7 +790,7 @@ def build_AMN_levels_dataframe(  # noqa: N802
     )
     # Override with flux_df values if provided and greater than zero
     for col in flux_df.columns:
-        trimmed_col = col.replace(exchange_suffix, "") if exchange_suffix else col
+        trimmed_col = trim(col)
         if trimmed_col in flux_upper_bounds and flux_df[col].max() > 0.0:
             flux_upper_bounds[trimmed_col] = flux_df[col].max()
 
@@ -795,16 +801,19 @@ def build_AMN_levels_dataframe(  # noqa: N802
 
     # Add columns for each exchange reaction with values
     for col in exchange_cols:
-        trimmed_col = col.replace(exchange_suffix, "") if exchange_suffix else col
+        trimmed_col = trim(col)
         # Precedence: custom_bounds > mappings_df.flux_upper_bound > sbml_bounds > defaults
         if custom_bounds and col in custom_bounds:
             # Highest priority: custom bounds
             level_val, max_val = custom_bounds[col]
             template_data[col] = [level_val, max_val, 0]
-        elif trimmed_col in flux_upper_bounds and flux_upper_bounds.get(trimmed_col, 0.0) > 0.0:
+        elif trimmed_col in flux_upper_bounds:
             # Second priority: Use upper bound from mappings_df.flux_upper_bound in fluxes if available
             max_val = flux_upper_bounds.get(trimmed_col, 0)
-            if flux_sources.get(trimmed_col, "") == MediumSource.FIXED.value:
+            if (
+                flux_sources.get(trimmed_col, "") == MediumSource.FIXED.value
+                or flux_sources.get(trimmed_col, "") == MediumSource.MEDIUM.value
+            ):
                 template_data[col] = [1, max_val, 0]
             else:
                 template_data[col] = [default_variable_level, max_val, 0]
@@ -817,6 +826,41 @@ def build_AMN_levels_dataframe(  # noqa: N802
             template_data[col] = [default_level, default_max_value, 0]
 
     return pd.DataFrame(template_data)
+
+
+def build_AMN_levels_for_different_levels(  # noqa: N802
+    df_AMN_levels: pd.DataFrame,  # noqa: N803
+    fixed_levels: list[int] | None = None,
+    fixed_max_values: list[int] | None = None,
+    default_level: int = 1,
+    default_max_value: int = 20,
+):
+    """Generate multiple AMN levels dataframes for different fixed levels and max values."""
+    new_dfs = []
+    if fixed_levels is None:
+        return new_dfs
+
+    if fixed_max_values is None:
+        fixed_max_values = [default_max_value]
+
+    if fixed_levels is None:
+        fixed_levels = [default_level]
+
+    for level in fixed_levels:
+        for max_value in fixed_max_values:
+            df_level = df_AMN_levels.copy()
+            # Reset index immediately after copying to ensure clean slate
+            df_level = df_level.reset_index(drop=True)
+            for col in df_level.columns:
+                if col == "name":
+                    continue
+                if df_level.at[0, col] == 1:
+                    df_level.at[1, col] = max_value  # set max_value
+                else:
+                    df_level.at[0, col] = level  # set level
+            new_dfs.append(df_level)
+
+    return new_dfs
 
 
 def parse_sbml_exchanges(sbml_path: str | Path) -> dict[str, str]:

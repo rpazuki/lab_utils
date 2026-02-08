@@ -222,23 +222,23 @@ custom_mapping:
     phosphate:  # Phosphate
         exchange_name: EX_pi_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
     sulfate:  # Sulfate
         exchange_name: EX_so4_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
     ammonium:  # Ammonium (nitrogen source)
         exchange_name: EX_nh4_e
         iupac_name: azanium
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
     chloride:  # Chloride
         exchange_name: EX_cl_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
 
@@ -246,25 +246,25 @@ custom_mapping:
     potassium:  # Potassium (K+)
         exchange_name: EX_k_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     sodium:  # Sodium (Na+)
         exchange_name: EX_na1_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     magnesium:  # Magnesium (Mg2+)
         exchange_name: EX_mg2_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     calcium:  # Calcium (Ca2+)
         exchange_name: EX_ca2_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     # Trace metals (iron)
@@ -273,7 +273,7 @@ custom_mapping:
     #     exchange_name: EX_fe2_e
     #     mass_per_litre: 0.0
     #     pubchem_name: ferrous-cation
-    #     flux_upper_bound: 1000.0
+    #     flux_upper_bound: 20.0
     #     source: fixed
 
     iron_fe3:  # Iron (Fe3+, ferric) (from FeCl3·6H2O) # VEIRFY
@@ -281,63 +281,63 @@ custom_mapping:
         exchange_name: EX_fe3_e
         mass_per_litre: 0.0
         pubchem_name: ferric-cation
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     # Trace metals (other)
     manganese:  # Manganese (Mn2+) (from MnCl2·4H2O) # VEIRFY
         exchange_name: EX_mn2_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     zinc:  # Zinc (Zn2+) (from ZnCl2) # VEIRFY
         exchange_name: EX_zn2_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     copper:  # Copper (Cu2+) (from CuSO4·5H2O) # VEIRFY
         exchange_name: EX_cu2_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     nickel:  # Nickel (Ni2+)
         exchange_name: EX_ni2_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     cobalt:  # Cobalt (Co2+) (from CoCl2·6H2O) # VEIRFY
         exchange_name: EX_cobalt2_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     # Trace elements (non-metals)
     molybdate:  # Molybdate (molybdenum source)
         exchange_name: EX_mobd_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     tungstate:  # Tungstate (tungsten source)
         exchange_name: EX_tungs_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     # selenate:  # Selenate (selenium source)
     #     exchange_name: EX_sel_e
     #     mass_per_litre: 0.0
-    #     flux_upper_bound: 1000.0
+    #     flux_upper_bound: 20.0
     #     source: fixed
 
     # selenite:  # Selenite (selenium source)
     #     exchange_name: EX_slnt_e
     #     mass_per_litre: 0.0
-    #     flux_upper_bound: 1000.0
+    #     flux_upper_bound: 20.0
     #     source: fixed
 
     # Gases
@@ -345,7 +345,7 @@ custom_mapping:
         exchange_name: EX_o2_e
         iupac_name: "molecular oxygen"
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     carbon_dioxide:  # Carbon dioxide (CO2)
@@ -353,34 +353,34 @@ custom_mapping:
         mass_per_litre: 0.0
         pubchem_name: carbon-dioxide
         pubchem_id: 280
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
 
     # Other inorganics
     water:  # Water (H2O)
         iupac_name: water
         exchange_name: EX_h2o_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     proton:  # Proton (H+)
         exchange_name: EX_h_e
         mass_per_litre: 0.0
-        flux_upper_bound: 1000.0
+        flux_upper_bound: 20.0
         source: fixed
 
     # Carbon sources (baseline)
-    glycerol:  # Glycerol
-        exchange_name: EX_glyc_e
-        mass_per_litre: 0.0
-        flux_upper_bound: 0.0
-        source: fixed
+    # glycerol:  # Glycerol
+    #     exchange_name: EX_glyc_e
+    #     mass_per_litre: 0.0
+    #     flux_upper_bound: 0.0
+    #     source: fixed
 
-    galactose:  # D-Galactose
-        exchange_name: EX_gal_e
-        mass_per_litre: 0.0
-        flux_upper_bound: 0.0
-        source: fixed
+    # galactose:  # D-Galactose
+    #     exchange_name: EX_gal_e
+    #     mass_per_litre: 0.0
+    #     flux_upper_bound: 0.0
+    #     source: fixed
 
     # ===========================================================
     # Specific compounds forms
