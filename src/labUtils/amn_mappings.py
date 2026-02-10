@@ -495,6 +495,7 @@ def build_supplement_flux_dataframe(
     max_time_column: str = "max_time",
     supplement_column: str = "supplements",
     total_volume_column: str = "total_volume_uL",
+    max_growth_rate_column: str = "mv_mu_max_value",
     od600_conversion_rate: float = 0.4,
     separator: str = ";",
     exchange_suffix: str | None = None,
@@ -544,21 +545,22 @@ def build_supplement_flux_dataframe(
         # Add mmol value for this supplement
         max_od = existing_row.get(max_od600_column, 0.0)
         max_time = existing_row.get(max_time_column, 0.0)
-        avg_od600 = max_od / 2
+        od600_at_gr = existing_row.get(max_growth_rate_column, 0.0)
+        # avg_od600 = max_od / 2
         # od600 to gCDW per litre
-        gCWD_per_litre = od600_to_gCDW(avg_od600, od600_conversion_rate)  # noqa: N806
+        # gCWD_per_litre = od600_to_gCDW(avg_od600, od600_conversion_rate)  # noqa: N806
         #
         # gCWD per liter to gCWD
-        gCWD = (  # noqa: N806
-            gCWD_per_litre * (total_volume_value / 1e6)  # convert uL to L  # noqa: N806
-        )
+        # gCWD = (  # noqa: N806
+        #     gCWD_per_litre * (total_volume_value / 1e6)  # convert uL to L  # noqa: N806
+        # )
         # return exchange_reaction, flux_upper_bound, mmol_value / (gCWD * max_time) if gCWD > 0 and max_time > 0 else 0.0
         # return (
         #     exchange_reaction,
         #     flux_upper_bound,
         #     mmol_value / (gCWD_per_litre * (total_volume_value / 1e6) * max_time) if gCWD > 0 and max_time > 0 else 0.0,
         # )
-        return exchange_reaction, flux_upper_bound, mmol_value / max_time if max_time > 0 else 0.0
+        return exchange_reaction, flux_upper_bound, mmol_value / (max_time * od600_at_gr) if max_time > 0 and od600_at_gr > 0 else 0.0
         # return exchange_reaction, flux_upper_bound, mmol_value
         # return exchange_reaction, flux_upper_bound, mmol_value / gCWD if gCWD > 0 else 0.0
 

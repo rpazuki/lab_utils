@@ -491,7 +491,7 @@ custom_mapping:
 
 
     mncl2.4h2o:  # Manganese chloride tetrahydrate (MnCl2·4H2O) # VEIRFY
-        mass_per_litre: 0.000016
+        mass_per_litre: 0.0016
         source: medium
         is_compound: true
         compounds:
