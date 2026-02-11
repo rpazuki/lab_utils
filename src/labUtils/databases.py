@@ -44,9 +44,8 @@ def load_experiment_data(per_strain: bool = True,
             ).reset_index()
         merging_directories = [d for d in (Path(datasource_path) / replication).iterdir() if not d.name.startswith(".")]
         df_parsed_data_list = [ pd.read_csv(d / "parsed_data.csv") for d in merging_directories if (d / "parsed_data.csv").exists() ]
-        print(f"Loaded parsed_data from {len(df_parsed_data_list)} directories")
         df_parsed_data = pd.concat(df_parsed_data_list, ignore_index=True)
-        df_parsed_data = df_parsed_data[df_parsed_data["strain"] == strain].copy().reset_index(drop=True)
+        df_parsed_data = df_parsed_data[df_parsed_data["strain"].str.startswith(strain)].copy().reset_index(drop=True)
 
 
     else:
