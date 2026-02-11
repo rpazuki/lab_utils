@@ -1,6 +1,181 @@
 import json
 import requests
+from sklearn.metrics import r2_score
+import matplotlib.pyplot as plt
+import numpy as np
 from .fba_tools import load_model
+
+
+
+def plot_fba_predictions(df_data,
+                         gr_column,
+                         per_strain: bool = True,
+                         replication: str = "replicates",
+                         strain: str = "purB",
+                         experiment: str = "mediabotJLF1",
+                         title=""):
+    fig = plt.figure(figsize=(10,6))
+    ax1 = fig.subplots(1,1)
+
+    # Get filtered data for plotting
+    y = np.array([p for p, status in df_data[["fba_growth", "fba_status"]].itertuples(index=False)
+                if not np.isnan(p) and status == 'optimal'])
+    x = np.array([v for p, status, v in df_data[["fba_growth", "fba_status", gr_column]].itertuples(index=False)
+                if not np.isnan(p) and status == 'optimal'])
+
+    # Get supplement groups for color coding
+    groups = np.array([g for p, status, g in df_data[["fba_growth", "fba_status", "group"]].itertuples(index=False)
+                        if not np.isnan(p) and status == 'optimal']).astype(str)
+    unique_groups = np.unique(groups)
+    n_groups = len(unique_groups)
+
+    # Use a colormap with distinct colors
+    if n_groups <= 10:
+        colors = plt.cm.tab10(np.linspace(0, 1, 10))[:n_groups] # type: ignore
+    elif n_groups <= 20:
+        colors = plt.cm.tab20(np.linspace(0, 1, 20))[:n_groups] # type: ignore
+    else:
+        colors = plt.cm.gist_rainbow(np.linspace(0, 1, n_groups)) # type: ignore
+
+    # Create color map for supplements
+    group_colors = {str(supp): colors[i] for i, supp in enumerate(unique_groups)}
+
+    # Plot each supplement group with its own color
+    for supp in unique_groups:
+        supp_mask = groups == supp
+
+        ax1.scatter(x[supp_mask], y[supp_mask],
+                    color=group_colors[supp],
+                    label=supp,
+                    alpha=0.7,
+                    s=50,
+                    edgecolors='black',
+                    linewidths=0.5)
+    ax1.plot([min(x), max(x)], [min(x), max(x)], color='gray', linestyle='--', label='y=x')
+
+    # Add legend
+    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8,
+                title='Supplement', framealpha=0.9)
+    m, b = np.polyfit(x, y, 1)
+    ax1.plot(x, m*x + b, color='red', label=f'y={m:.2f}x+{b:.2f}')
+
+    # Calculate both R² of y = x, correlation, and R2_score metrics
+    y_pred = x
+    ss_res = np.sum((y - y_pred) ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
+    r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+    correlation_matrix = np.corrcoef(x, y)
+    correlation_xy = correlation_matrix[0,1]
+    r_squared_corr = correlation_xy**2
+    r2_uncalibrated = r2_score(x, y, multioutput='variance_weighted')
+
+    # Calculate R² with calibrated predictions
+    # y_calibrated = m * x + b
+    # r2_calibrated = r2_score(y, y_calibrated)
+
+    # print(f"Calibration parameters: m={m:.4f}, b={b:.4f}")
+    # print(f"Correlation²: {r_squared_corr:.4f}")
+    # print(f"R² (uncalibrated, y vs x): {r2_uncalibrated:.4f}")
+    # print(f"R² (calibrated, y vs mx+b): {r2_calibrated:.4f}")
+    # print(f"\nNote: R²(calibrated) ≈ Correlation² as expected!")
+
+    ax1.set_xlabel("Experimental growth rates")
+    ax1.set_ylabel("FBA predicted growth rates")
+    if per_strain:
+        subtitle= (f"Flux converted - Strain:{strain}, "
+                    f"\n Data points n:{len(x)}")
+    else:
+        subtitle= (f"Flux converted - experiment:{experiment},  "
+                    f"\n Data points n:{len(x)}")
+    ax1.set_title(f"{title}{subtitle}"
+                f"(Corr²={r_squared_corr:.4f}, R²={r2:.4f}, R² scored={r2_uncalibrated:.4f}) \n"
+                f"Calibration: y={m:.3f}x+{b:.3f} "
+                )
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    groups = df_data['group'].astype(str).values
+    unique_groups = np.unique(groups)
+    n_groups = len(unique_groups)
+    n_groups = len(unique_groups)
+    n_cols = min(3, n_groups)
+    n_rows = int(np.ceil(n_groups / n_cols))
+
+    fig2, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows))
+    if n_groups == 1:
+        axes = np.array([axes])
+    axes = axes.flatten() if n_groups > 1 else axes
+
+    for idx, supp in enumerate(unique_groups):
+        ax = axes[idx] if n_groups > 1 else axes[0]
+
+        # Get data for this supplement group
+        supp_mask = groups == supp
+        x_supp = x[supp_mask]
+        y_supp = y[supp_mask]
+
+        # Get the individual supplements within this group for coloring
+        supp_supplements = df_data['supplements_unified'].values[supp_mask]
+        unique_supps_in_group = np.unique(supp_supplements)
+        n_supps_in_group = len(unique_supps_in_group)
+
+        # Create color map for individual supplements within this group
+        if n_supps_in_group <= 10:
+            supp_colors_local = plt.cm.tab10(np.linspace(0, 1, 10))[:n_supps_in_group] # type: ignore
+        elif n_supps_in_group <= 20:
+            supp_colors_local = plt.cm.tab20(np.linspace(0, 1, 20))[:n_supps_in_group] # type: ignore
+        else:
+            supp_colors_local = plt.cm.gist_rainbow(np.linspace(0, 1, n_supps_in_group)) # type: ignore
+
+        supp_color_map = {s: supp_colors_local[i] for i, s in enumerate(unique_supps_in_group)}
+
+        # Plot scatter with individual supplement colors
+        for individual_supp in unique_supps_in_group:
+            individual_mask = supp_supplements == individual_supp
+            ax.scatter(x_supp[individual_mask], y_supp[individual_mask],
+                      color=supp_color_map[individual_supp],
+                      alpha=0.7,
+                      s=50,
+                      edgecolors='black',
+                      linewidths=0.5,
+                      label=individual_supp)
+
+        # Fit line and calculate R²
+        if len(x_supp) > 1:
+            m_supp, b_supp = np.polyfit(x_supp, y_supp, 1)
+            ax.plot(x_supp, m_supp*x_supp + b_supp,
+                   color='red',
+                   linewidth=2,
+                   label=f'y={m_supp:.2f}x+{b_supp:.2f}')
+
+            # Calculate R²
+            correlation_matrix_supp = np.corrcoef(x_supp, y_supp)
+            correlation_xy_supp = correlation_matrix_supp[0,1]
+            r_squared_supp = correlation_xy_supp**2
+
+            ax.set_title(f'{supp}\nR²={r_squared_supp:.4f}, n={len(x_supp)}',
+                        fontsize=10, fontweight='bold')
+        else:
+            ax.set_title(f'{supp}\nn={len(x_supp)} (insufficient data)',
+                        fontsize=10)
+
+        ax.set_xlabel("Experimental growth rates")
+        ax.set_ylabel("FBA predicted growth rates")
+        ax.grid(True, alpha=0.3)
+        ax.plot([min(x_supp), max(x_supp)], [min(x_supp), max(x_supp)], color='gray', linestyle='--', label='y=x')
+        # if len(x_supp) > 1:
+        #     ax.legend(fontsize=6, ncol=2, loc='best')
+    average_type = "All data points" if replication == "no_replicates" else "OD average" if replication == "replicates" else "Growth rate average"
+    # Hide unused subplots
+    for idx in range(n_groups, len(axes)):
+        axes[idx].axis('off')
+
+    fig2.suptitle(f'Individual Supplement Group Analysis - {strain if per_strain else experiment}, for {average_type}',
+                 fontsize=14, fontweight='bold')
+    fig2.tight_layout()
+    plt.show()
 
 def normalize_stoichiometry(reaction):
     """Return a frozenset of metabolite:coefficient pairs for comparison."""

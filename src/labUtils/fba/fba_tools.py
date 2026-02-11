@@ -158,7 +158,7 @@ def find_fba_solutions_scaling_factor(df:pd.DataFrame,
                      gr_column:str = "mv_mu_max",
                      solution_column_name:str = "fba_growth",
                      solution_status_column_name:str = "fba_status",
-              ) :
+              ) -> tuple[pd.DataFrame, pd.DataFrame]:
     df = df.copy()
     df[solution_column_name] = 0.0
     df[solution_status_column_name] = ""
