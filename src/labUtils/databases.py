@@ -168,14 +168,18 @@ def load_multiple_experiments_data(per_strain: bool = True,
                          od_std_max_threshold: float = 0.0,
                          datasource_path:str = "H:/ROBOT_SCIENTIST/E_coli/Growth_rates/2025-10-31-27/processed",
                          levels_csv_file:str = "df_AMN_actual_medium_level.csv"
-                         ) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
+                         ) -> tuple[pd.DataFrame | None,
+                                    pd.DataFrame | None,
+                                    pd.DataFrame | None,
+                                    pd.DataFrame | None]:
     """Load and combine data from multiple experiments."""
     df = None
     df_exp_data = None
     df_levels = None
+    df_parsed_data = None
     if per_strain:
         for strain in strains:
-            df_temp, df_exp_data_temp, df_levels_temp = load_experiment_data(per_strain=per_strain,
+            df_temp, df_exp_data_temp, df_levels_temp, df_pasred_data_temp = load_experiment_data(per_strain=per_strain,
                                             replication=replication,
                                             strain=strain,
                                             well_column=well_column,
@@ -185,12 +189,14 @@ def load_multiple_experiments_data(per_strain: bool = True,
                 df = df_temp
                 df_exp_data = df_exp_data_temp
                 df_levels = df_levels_temp
+                df_parsed_data = df_pasred_data_temp
             else:
                 df = pd.concat([df, df_temp], ignore_index=True)
                 df_exp_data = pd.concat([df_exp_data, df_exp_data_temp], ignore_index=True)
+                df_parsed_data = pd.concat([df_parsed_data, df_pasred_data_temp], ignore_index=True)
     else:
         for experiment in experiments:
-            df_temp, df_exp_data_temp, df_levels_temp = load_experiment_data(per_strain=per_strain,
+            df_temp, df_exp_data_temp, df_levels_temp, df_pasred_data_temp = load_experiment_data(per_strain=per_strain,
                                             replication=replication,
                                             experiment=experiment,
                                             well_column=well_column,
@@ -200,7 +206,9 @@ def load_multiple_experiments_data(per_strain: bool = True,
                 df = df_temp
                 df_exp_data = df_exp_data_temp
                 df_levels = df_levels_temp
+                df_parsed_data = df_pasred_data_temp
             else:
                 df = pd.concat([df, df_temp], ignore_index=True)
                 df_exp_data = pd.concat([df_exp_data, df_exp_data_temp], ignore_index=True)
-    return df, df_exp_data, df_levels
+                df_parsed_data = pd.concat([df_parsed_data, df_pasred_data_temp], ignore_index=True)
+    return df, df_exp_data, df_levels, df_parsed_data
