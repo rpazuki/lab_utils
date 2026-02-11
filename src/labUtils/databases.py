@@ -44,6 +44,8 @@ def load_experiment_data(per_strain: bool = True,
             ).reset_index()
         merging_directories = [d for d in (Path(datasource_path) / replication).iterdir() if not d.name.startswith(".")]
         df_parsed_data_list = [ pd.read_csv(d / "parsed_data.csv") for d in merging_directories if (d / "parsed_data.csv").exists() ]
+        for df, d in zip(df_parsed_data_list, merging_directories):
+            df["experiment"] = d.name
         df_parsed_data = pd.concat(df_parsed_data_list, ignore_index=True)
         df_parsed_data = df_parsed_data[df_parsed_data["strain"].str.startswith(strain)].copy().reset_index(drop=True)
 
@@ -219,3 +221,5 @@ def load_multiple_experiments_data(per_strain: bool = True,
                 df_exp_data = pd.concat([df_exp_data, df_exp_data_temp], ignore_index=True)
                 df_parsed_data = pd.concat([df_parsed_data, df_pasred_data_temp], ignore_index=True)
     return df, df_exp_data, df_levels, df_parsed_data
+
+
