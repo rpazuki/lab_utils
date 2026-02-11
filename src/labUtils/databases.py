@@ -14,14 +14,14 @@ def load_experiment_data(per_strain: bool = True,
                          od_std_max_threshold: float = 0.0,
                          datasource_path:str = "H:/ROBOT_SCIENTIST/E_coli/Growth_rates/2025-10-31-27/processed",
                          levels_csv_file:str = "df_AMN_actual_medium_level.csv"
-                         ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                         ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load experimental data, growth rates, and statistics; filter based on OD variability.
     """
     flg_has_statistic = True
     if per_strain:
-        exp_data_path = f"{datasource_path}/{replication}_STRAINS/{strain}/AMN_dataset/"
-        growth_data_path = f"{datasource_path}/{replication}_STRAINS/{strain}/"
-        std_data_path = f"{datasource_path}/{replication}/"
+        exp_data_path = Path(datasource_path) / f"{replication}_STRAINS" / strain / "AMN_dataset"
+        growth_data_path = Path(datasource_path) / f"{replication}_STRAINS" / strain
+        std_data_path = Path(datasource_path) / replication
         directories = [d for d in Path(std_data_path).iterdir()]
         std_data_list = [ pd.read_csv(d / "predictions.csv") for d in directories if (d / "predictions.csv").exists() ]
         for df , d in zip(std_data_list, directories):
@@ -44,10 +44,10 @@ def load_experiment_data(per_strain: bool = True,
             ).reset_index()
 
     else:
-        exp_data_path = f"{datasource_path}/{replication}/{experiment}/AMN_dataset/"
-        growth_data_path = f"{datasource_path}/{replication}/{experiment}/"
+        exp_data_path = Path(datasource_path) / replication / experiment / "AMN_dataset"
+        growth_data_path = Path(datasource_path) / replication / experiment
 
-        std_data = pd.read_csv(growth_data_path + "predictions.csv")
+        std_data = pd.read_csv(growth_data_path / "predictions.csv")
         if "od600_mean" not in std_data.columns:
             flg_has_statistic = False
             std_data = std_data.groupby(well_column).agg(
@@ -57,9 +57,10 @@ def load_experiment_data(per_strain: bool = True,
                 od_std_mean = ( 'od600_std', 'mean' ),
             ).reset_index()
     #
-    exp_data = pd.read_csv(exp_data_path + "df_flux.csv")
-    growth_data = pd.read_csv(growth_data_path + "growth_rates.csv")
-    df_levels = pd.read_csv(exp_data_path + levels_csv_file)
+    exp_data = pd.read_csv(exp_data_path / "df_flux.csv")
+    growth_data = pd.read_csv(growth_data_path / "growth_rates.csv")
+    df_levels = pd.read_csv(exp_data_path / levels_csv_file)
+    df_parsed_data = pd.read_csv(exp_data_path / "parsed_data.csv")
 
     # Filter growth_data to match the rows in exp_data
     # Since exp_data was created from growth_data where success=='ok', we need to apply the same filter
@@ -152,8 +153,8 @@ def load_experiment_data(per_strain: bool = True,
         return '+'.join(categories)
 
     combinded_data["group"] = combinded_data["supplements_unified"].apply(classify)
-
-    return combinded_data, exp_data, df_levels
+    #===============================
+    return combinded_data, exp_data, df_levels, df_parsed_data
 
 
 def load_multiple_experiments_data(per_strain: bool = True,

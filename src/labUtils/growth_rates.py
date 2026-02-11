@@ -599,6 +599,157 @@ def predict_modified_gompertz_per_series(
     return preds_df
 
 
+def plot_single_series(
+    series_df: pd.DataFrame,
+    group_keys: tuple | Any,
+    time_col: str = "time_h",
+    value_col: str = "od600",
+    group_cols: list[str] = ["well"],
+    output_dir: str | Path | None = None,
+    standard_deviation_column: str | None = None,
+    pred_col: str = "od600_fit",
+    save_plot: bool = True,
+) -> None:
+    """Plot and save a growth curve for a single series.
+
+    Parameters
+    ----------
+    series_df : pd.DataFrame
+        DataFrame containing data for a single series (group).
+        Must include columns: time_col, value_col, pred_col, 'success', 'mu_max',
+        and optionally: 'mv_mu_max', 'y0', 'A', 'lambda', 'strain', 'supplements'
+    group_keys : tuple | Any
+        The group identifier(s). Can be a single value or tuple of values.
+    time_col : str
+        Column name for time values (default: "time_h")
+    value_col : str
+        Column name for measured values (default: "od600")
+    group_cols : list[str]
+        Columns to group by (default: ["well"])
+    output_dir : Optional[str | Path]
+        Directory to save plots (default: None, saves to current directory)
+    standard_deviation_column : Optional[str]
+        Column name containing standard deviation values for error bars.
+    pred_col : str
+        Column name for predicted values (default: "od600_fit")
+    """
+    if series_df["success"].iloc[0] is False or pd.isna(series_df["mu_max"].iloc[0]):
+        logging.info(f"Skipping plot for {group_keys}: fit was not successful")
+        return
+
+    t = series_df[time_col].to_numpy(dtype=float)
+    y = series_df[value_col].to_numpy(dtype=float)
+    y_hat = series_df[pred_col].to_numpy(dtype=float)
+
+    # Get standard deviation if provided
+    yerr = None
+    if standard_deviation_column is not None and standard_deviation_column in series_df.columns:
+        yerr = series_df[standard_deviation_column].to_numpy(dtype=float)
+
+    plt.figure(figsize=(8, 5))
+    if yerr is not None:
+        plt.errorbar(
+            t,
+            y,
+            yerr=yerr,
+            fmt=".",
+            label=f"{group_cols[0]}={group_keys}"
+            if not isinstance(group_keys, tuple)
+            else ", ".join(f"{col}={val}" for col, val in zip(group_cols, group_keys)),
+            capsize=3,
+            capthick=1,
+            elinewidth=1,
+        )
+    else:
+        plt.scatter(
+            t,
+            y,
+            label=f"{group_cols[0]}={group_keys}"
+            if not isinstance(group_keys, tuple)
+            else ", ".join(f"{col}={val}" for col, val in zip(group_cols, group_keys)),
+            marker=".",
+        )
+    plt.plot(t, y_hat, label="Predicted", linestyle="--", color="orange")
+    plt.xlabel("Time (h)")
+    plt.ylabel(r"$\ln(OD/OD_0)$")
+
+    # Get the first key value for filename and title
+    first_key = group_keys if not isinstance(group_keys, tuple) else group_keys[0]
+    if "mv_mu_max" in series_df.columns:
+        plt.title(
+            f"Growth Curve for  well '{first_key}', Strain '{series_df['strain'].iloc[0]}' \n"
+            f"Supplement(s): '{series_df['supplements'].iloc[0][:100]}'\n"
+            f" GM-MV*: {series_df['mv_mu_max'].iloc[0]:.3f} "
+            r"$\frac{1}{H}$, "
+            f" GM-G**: {series_df['mu_max'].iloc[0]:.3f} "
+            r"$\frac{1}{H}$, "
+            r"$y_0$: "
+            f"{series_df['y0'].iloc[0]:.3f}, "
+            r"$A$:"
+            f" {series_df['A'].iloc[0]:.3f}, "
+            r"$\lambda$:"
+            f" {series_df['lambda'].iloc[0]:.3f}"
+        )
+        # Plot a box outside the axis at right bottom side
+        # and write a text inside it as legend
+        textstr = "*GM-MV: Maximum Growth Rate from Moving Window\n**GM-G: Maximum Growth Rate from Gompertz Fit"
+        props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+        plt.gca().text(
+            0.98,
+            0.02,
+            textstr,
+            transform=plt.gca().transAxes,
+            fontsize=10,
+            verticalalignment="bottom",
+            horizontalalignment="right",
+            bbox=props,
+        )
+    else:
+        plt.title(
+            f"Growth Curve for  well '{first_key}', Strain '{series_df['strain'].iloc[0]}' \n"
+            f"Supplement(s): '{series_df['supplements'].iloc[0][:100]}'\n"
+            f" GM*: {series_df['mu_max'].iloc[0]:.3f} "
+            r"$\frac{1}{H}$, "
+            r"$y_0$: "
+            f"{series_df['y0'].iloc[0]:.3f}, "
+            r"$A$:"
+            f"{series_df['A'].iloc[0]:.3f}, "
+            r"$\lambda$:"
+            f" {series_df['lambda'].iloc[0]:.3f}"
+        )
+        # Plot a box outside the axis at right bottom side
+        # and write a text inside it as legend
+        textstr = "*GM: Maximum Growth Rate"
+        props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+        plt.gca().text(
+            0.98,
+            0.02,
+            textstr,
+            transform=plt.gca().transAxes,
+            fontsize=10,
+            verticalalignment="bottom",
+            horizontalalignment="right",
+            bbox=props,
+        )
+    plt.legend()
+    # plt.ylim(bottom=0)
+    plt.grid(True)
+
+
+    if save_plot:
+        # Save figure instead of showing
+        filename = f"growth_curve_well_{first_key}.png"
+        if output_dir is not None:
+            output_dir_plots = Path(output_dir) / "plots"
+            output_dir_plots.mkdir(parents=True, exist_ok=True)
+            filepath = output_dir_plots / filename
+        else:
+            filepath = filename
+        plt.savefig(filepath, dpi=300, bbox_inches="tight")
+        logging.info(f"Saved plot: {filepath}")
+        plt.close()  # Close figure to free memory
+
+
 def plot_and_save(
     preds_df: pd.DataFrame,
     params_df: pd.DataFrame,
@@ -607,6 +758,7 @@ def plot_and_save(
     group_cols: list[str] = ["well"],
     output_dir: str | Path | None = None,
     standard_deviation_column: str | None = None,
+    save_plot: bool = True,
 ):
     """Plots and saves growth curves with fitted model for each series.
 
@@ -626,126 +778,26 @@ def plot_and_save(
     # Get unique groups to avoid duplicates
     unique_groups = df_combined[group_cols].drop_duplicates()
 
-    for _, (_, group_row) in enumerate(unique_groups.iterrows()):
+    for _, group_row in unique_groups.iterrows():
         # Filter data for this specific group
-        mask = True
+        mask = pd.Series([True] * len(df_combined), index=df_combined.index)
         for col in group_cols:
             mask = mask & (df_combined[col] == group_row[col])
         g = df_combined[mask]
-
-        if g["success"].iloc[0] is False or pd.isna(g["mu_max"].iloc[0]):
-            continue
 
         keys = tuple(group_row[col] for col in group_cols)
         if len(keys) == 1:
             keys = keys[0]
 
-        t = g[time_col].to_numpy(dtype=float)
-        y = g[value_col].to_numpy(dtype=float)
-        y_hat = g[pred_col].to_numpy(dtype=float)
-
-        # Get standard deviation if provided
-        yerr = None
-        if standard_deviation_column is not None and standard_deviation_column in g.columns:
-            yerr = g[standard_deviation_column].to_numpy(dtype=float)
-
-        plt.figure(figsize=(8, 5))
-        if yerr is not None:
-            plt.errorbar(
-                t,
-                y,
-                yerr=yerr,
-                fmt=".",
-                label=f"{group_cols[0]}={keys}"
-                if not isinstance(keys, tuple)
-                else ", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)),
-                capsize=3,
-                capthick=1,
-                elinewidth=1,
-            )
-        else:
-            plt.scatter(
-                t,
-                y,
-                label=f"{group_cols[0]}={keys}"
-                if not isinstance(keys, tuple)
-                else ", ".join(f"{col}={val}" for col, val in zip(group_cols, keys)),
-                marker=".",
-            )
-        plt.plot(t, y_hat, label="Predicted", linestyle="--", color="orange")
-        plt.xlabel("Time (h)")
-        plt.ylabel(r"$\ln(OD/OD_0)$")
-
-        # Get the first key value for filename and title
-        first_key = keys if not isinstance(keys, tuple) else keys[0]
-        if "mv_mu_max" in g.columns:
-            plt.title(
-                f"Growth Curve for  well '{first_key}', Strain '{g['strain'].iloc[0]}' \n"
-                f"Supplement(s): '{g['supplements'].iloc[0][:100]}'\n"
-                f" GM-MV*: {g['mv_mu_max'].iloc[0]:.3f} "
-                r"$\frac{1}{H}$, "
-                f" GM-G**: {g['mu_max'].iloc[0]:.3f} "
-                r"$\frac{1}{H}$, "
-                r"$y_0$: "
-                f"{g['y0'].iloc[0]:.3f}, "
-                r"$A$:"
-                f" {g['A'].iloc[0]:.3f}, "
-                r"$\lambda$:"
-                f" {g['lambda'].iloc[0]:.3f}"
-            )
-            # Plot a box outside the axis at right bottom side
-            # and write a text inside it as legend
-            textstr = "*GM-MV: Maximum Growth Rate from Moving Window\n**GM-G: Maximum Growth Rate from Gompertz Fit"
-            props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
-            plt.gca().text(
-                0.98,
-                0.02,
-                textstr,
-                transform=plt.gca().transAxes,
-                fontsize=10,
-                verticalalignment="bottom",
-                horizontalalignment="right",
-                bbox=props,
-            )
-        else:
-            plt.title(
-                f"Growth Curve for  well '{first_key}', Strain '{g['strain'].iloc[0]}' \n"
-                f"Supplement(s): '{g['supplements'].iloc[0][:100]}'\n"
-                f" GM*: {g['mu_max'].iloc[0]:.3f} "
-                r"$\frac{1}{H}$, "
-                r"$y_0$: "
-                f"{g['y0'].iloc[0]:.3f}, "
-                r"$A$:"
-                f"{g['A'].iloc[0]:.3f}, "
-                r"$\lambda$:"
-                f" {g['lambda'].iloc[0]:.3f}"
-            )
-            # Plot a box outside the axis at right bottom side
-            # and write a text inside it as legend
-            textstr = "*GM: Maximum Growth Rate"
-            props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
-            plt.gca().text(
-                0.98,
-                0.02,
-                textstr,
-                transform=plt.gca().transAxes,
-                fontsize=10,
-                verticalalignment="bottom",
-                horizontalalignment="right",
-                bbox=props,
-            )
-        plt.legend()
-        # plt.ylim(bottom=0)
-        plt.grid(True)
-
-        # Save figure instead of showing
-        filename = f"growth_curve_well_{first_key}.png"
-        if output_dir is not None:
-            output_dir_plots = Path(output_dir) / "plots"
-            output_dir_plots.mkdir(parents=True, exist_ok=True)
-            filepath = output_dir_plots / filename
-        else:
-            filepath = filename
-        plt.savefig(filepath, dpi=300, bbox_inches="tight")
-        logging.info(f"Saved plot: {filepath}")
-        plt.close()  # Close figure to free memory
+        # Call the single-series plotting function
+        plot_single_series(
+            series_df=g,
+            group_keys=keys,
+            time_col=time_col,
+            value_col=value_col,
+            group_cols=group_cols,
+            output_dir=output_dir,
+            standard_deviation_column=standard_deviation_column,
+            pred_col=pred_col,
+            save_plot=save_plot,
+        )

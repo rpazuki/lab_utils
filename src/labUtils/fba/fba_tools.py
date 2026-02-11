@@ -1,6 +1,16 @@
 import pandas as pd
 import cobra
 
+# Helper functions
+def load_model(path):
+    """Load a COBRA model from SBML or JSON."""
+    if path.endswith(".xml") or path.endswith(".sbml"):
+        return cobra.io.read_sbml_model(path)
+    elif path.endswith(".json"):
+        return cobra.io.load_json_model(path)
+    else:
+        raise ValueError("Unsupported model format")
+
 def solve_fba(df:pd.DataFrame,
                      model:cobra.Model,
                      df_medium_columns:list,

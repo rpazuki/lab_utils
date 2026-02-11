@@ -4,3 +4,4 @@ addict
 pyyaml
 cobra
 pubchempy
+escher
