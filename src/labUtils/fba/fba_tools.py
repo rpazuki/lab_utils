@@ -1,6 +1,8 @@
 import pandas as pd
 import cobra
 
+from labUtils.databases import load_experiment_data
+
 # Helper functions
 def load_model(path):
     """Load a COBRA model from SBML or JSON."""
@@ -10,6 +12,51 @@ def load_model(path):
         return cobra.io.load_json_model(path)
     else:
         raise ValueError("Unsupported model format")
+
+def load_fba_data(per_strain: bool = True,
+                replication: str = "replicates",
+                strain: str = "purB",
+                experiment: str = "mediabotJLF1",
+                well_column: str = "wells",
+                gr_column: str = "mv_mu_max",
+                od_cv_mean_threshold: float = 0.0,
+                od_cv_max_threshold: float = 0.0,
+                od_std_max_threshold: float = 0.0,
+                datasource_path:str = "H:/ROBOT_SCIENTIST/E_coli/Growth_rates/2025-10-31-27/processed",
+                levels_csv_file:str = "df_AMN_actual_medium_level.csv") -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame]:
+    df_data, _,df_levels, df_parsed_data = load_experiment_data(per_strain=per_strain,
+                                                                replication=replication,
+                                                                strain=strain,
+                                                                experiment=experiment,
+                                                                well_column=well_column,
+                                                                gr_column=gr_column,
+                                                                od_cv_mean_threshold=od_cv_mean_threshold,
+                                                                od_cv_max_threshold=od_cv_max_threshold,
+                                                                od_std_max_threshold=od_std_max_threshold,
+                                                                datasource_path=datasource_path,
+                                                                levels_csv_file=levels_csv_file)
+    fixed_columns = []
+    medium_columns = []
+    supplement_columns = []
+
+    level_index = -1
+    max_value_index = -1
+
+    for col in df_levels.columns:
+        if col == "name":
+            level_index = df_levels[col].values.tolist().index('level')
+            max_value_index = df_levels[col].values.tolist().index('max_value')
+            continue
+
+        if df_levels[col].values[level_index] == 1 and df_levels[col].values[max_value_index] == 20.0:
+            fixed_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
+        elif df_levels[col].values[level_index] == 1 and df_levels[col].values[max_value_index] != 20.0:
+            medium_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
+        else:
+            supplement_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
+
+    return df_data, fixed_columns, medium_columns, supplement_columns, df_parsed_data
+
 
 def solve_fba(df:pd.DataFrame,
                      model:cobra.Model,
