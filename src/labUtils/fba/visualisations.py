@@ -88,7 +88,7 @@ def plot_fba_predictions(df_data,
     else:
         subtitle= (f"Flux converted - experiment:{experiment},  "
                     f"\n Data points n:{len(x)}")
-    ax1.set_title(f"{title}{subtitle}"
+    ax1.set_title(f"{title} {subtitle}"
                 f"(Corr²={r_squared_corr:.4f}, R²={r2:.4f}, R² scored={r2_uncalibrated:.4f}) \n"
                 f"Calibration: y={m:.3f}x+{b:.3f} "
                 )

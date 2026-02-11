@@ -158,12 +158,13 @@ def find_fba_solutions_scaling_factor(df:pd.DataFrame,
                      gr_column:str = "mv_mu_max",
                      solution_column_name:str = "fba_growth",
                      solution_status_column_name:str = "fba_status",
-              ) -> tuple[pd.DataFrame, pd.DataFrame]:
+              ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     df = df.copy()
     df[solution_column_name] = 0.0
     df[solution_status_column_name] = ""
     fluxes = []
     scale_factors = []
+    shadow_prices = []
     for _, row in df.iterrows():
         diff = float('inf')
         current_iteration = 0
@@ -203,13 +204,17 @@ def find_fba_solutions_scaling_factor(df:pd.DataFrame,
             current_iteration += 1
         if solution.status == 'optimal':
             fluxes.append(solution.fluxes.copy())
+            shadow_prices.append(solution.shadow_prices.copy())
         else:
             fluxes.append([])
+            shadow_prices.append([])
 
         scale_factors.append(scale_factor)
         #===============================
     fluxes_df = pd.concat([flux for flux in fluxes], axis=1, ignore_index=True)
     fluxes_df = fluxes_df.transpose()
+    shadow_prices_df = pd.concat([sp for sp in shadow_prices], axis=1, ignore_index=True)
+    shadow_prices_df = shadow_prices_df.transpose()
     df["scaling_factor"] = scale_factors
-    return df, fluxes_df
+    return df, fluxes_df, shadow_prices_df
 
