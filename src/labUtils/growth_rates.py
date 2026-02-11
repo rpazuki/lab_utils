@@ -633,9 +633,6 @@ def plot_single_series(
     pred_col : str
         Column name for predicted values (default: "od600_fit")
     """
-    if series_df["success"].iloc[0] is False or pd.isna(series_df["mu_max"].iloc[0]):
-        logging.info(f"Skipping plot for {group_keys}: fit was not successful")
-        return
 
     t = series_df[time_col].to_numpy(dtype=float)
     y = series_df[value_col].to_numpy(dtype=float)
@@ -788,16 +785,18 @@ def plot_and_save(
         keys = tuple(group_row[col] for col in group_cols)
         if len(keys) == 1:
             keys = keys[0]
-
-        # Call the single-series plotting function
-        plot_single_series(
-            series_df=g,
-            group_keys=keys,
-            time_col=time_col,
-            value_col=value_col,
-            group_cols=group_cols,
-            output_dir=output_dir,
-            standard_deviation_column=standard_deviation_column,
-            pred_col=pred_col,
-            save_plot=save_plot,
-        )
+        if g["success"].iloc[0] is False or pd.isna(g["mu_max"].iloc[0]):
+            logging.info(f"Skipping plot for {keys}: fit was not successful")
+        else:
+            # Call the single-series plotting function
+            plot_single_series(
+                series_df=g,
+                group_keys=keys,
+                time_col=time_col,
+                value_col=value_col,
+                group_cols=group_cols,
+                output_dir=output_dir,
+                standard_deviation_column=standard_deviation_column,
+                pred_col=pred_col,
+                save_plot=save_plot,
+            )
