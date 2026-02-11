@@ -42,6 +42,11 @@ def load_experiment_data(per_strain: bool = True,
                 od_cv_max = ('od_CV', 'max'),
                 od_cv_mean = ('od_CV', 'mean'),
             ).reset_index()
+        merging_directories = [d for d in (Path(datasource_path) / replication).iterdir() if not d.name.startswith(".")]
+        df_parsed_data_list = [ pd.read_csv(d / "parsed_data.csv") for d in merging_directories if (d / "parsed_data.csv").exists() ]
+        df_parsed_data = pd.concat(df_parsed_data_list, ignore_index=True)
+        df_parsed_data = df_parsed_data[df_parsed_data["strain"] == strain].copy().reset_index(drop=True)
+
 
     else:
         exp_data_path = Path(datasource_path) / replication / experiment / "AMN_dataset"
@@ -56,11 +61,13 @@ def load_experiment_data(per_strain: bool = True,
                 od_std_max = ( 'od600_std', 'max' ),
                 od_std_mean = ( 'od600_std', 'mean' ),
             ).reset_index()
+
+            df_parsed_data = pd.read_csv(growth_data_path / "parsed_data.csv")
+
     #
     exp_data = pd.read_csv(exp_data_path / "df_flux.csv")
     growth_data = pd.read_csv(growth_data_path / "growth_rates.csv")
     df_levels = pd.read_csv(exp_data_path / levels_csv_file)
-    df_parsed_data = pd.read_csv(growth_data_path / "parsed_data.csv")
 
     # Filter growth_data to match the rows in exp_data
     # Since exp_data was created from growth_data where success=='ok', we need to apply the same filter
