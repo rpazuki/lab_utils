@@ -60,7 +60,7 @@ def load_experiment_data(per_strain: bool = True,
     exp_data = pd.read_csv(exp_data_path / "df_flux.csv")
     growth_data = pd.read_csv(growth_data_path / "growth_rates.csv")
     df_levels = pd.read_csv(exp_data_path / levels_csv_file)
-    df_parsed_data = pd.read_csv(exp_data_path / "parsed_data.csv")
+    df_parsed_data = pd.read_csv(growth_data_path / "parsed_data.csv")
 
     # Filter growth_data to match the rows in exp_data
     # Since exp_data was created from growth_data where success=='ok', we need to apply the same filter
