@@ -2,6 +2,8 @@ import pandas as pd
 import cobra
 
 from labUtils.databases import load_experiment_data
+from labUtils.growth_rates import fit_max_growth_rate_per_series, fit_modified_gompertz_per_series, transform_to_log_n_n0
+from labUtils.utils import smart_join_drop_right
 
 # Helper functions
 def load_model(path):
@@ -54,6 +56,13 @@ def load_fba_data(per_strain: bool = True,
             medium_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
         else:
             supplement_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
+    #
+    # df_transformed = transform_to_log_n_n0(df_parsed_data)
+    # df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed)
+    # df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed)
+    # df_combined_fit = smart_join_drop_right(df_fit_modified_gompertz, df_fit_max_growth_rate)
+
+
 
     return df_data, fixed_columns, medium_columns, supplement_columns, df_parsed_data
 
@@ -204,7 +213,7 @@ def find_fba_solutions_scaling_factor(df:pd.DataFrame,
             current_iteration += 1
         if solution.status == 'optimal':
             fluxes.append(solution.fluxes.copy())
-            shadow_prices.append(solution.shadow_prices.copy())
+            shadow_prices.append(solution.shadow_prices.copy()) # type: ignore
         else:
             fluxes.append([])
             shadow_prices.append([])
