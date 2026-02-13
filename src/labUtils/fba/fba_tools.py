@@ -22,11 +22,12 @@ def load_fba_data(per_strain: bool = True,
                 experiment: str = "mediabotJLF1",
                 well_column: str = "wells",
                 gr_column: str = "mv_mu_max",
+                 group_cols: list[str] = ["well"],
                 od_cv_mean_threshold: float = 0.0,
                 od_cv_max_threshold: float = 0.0,
                 od_std_max_threshold: float = 0.0,
                 datasource_path:str = "H:/ROBOT_SCIENTIST/E_coli/Growth_rates/2025-10-31-27/processed",
-                levels_csv_file:str = "df_AMN_actual_medium_level.csv") -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame]:
+                levels_csv_file:str = "df_AMN_actual_medium_level.csv") -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame, pd.DataFrame]:
     df_data, _,df_levels, df_parsed_data = load_experiment_data(per_strain=per_strain,
                                                                 replication=replication,
                                                                 strain=strain,
@@ -83,9 +84,13 @@ def load_fba_data(per_strain: bool = True,
     df_combined_fit = smart_join_drop_right(df_fit_modified_gompertz, df_fit_max_growth_rate)
     df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed, df_combined_fit)
 
+    fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
+    params_to_merge = df_combined_fit[[col for col in fit_cols if col in df_combined_fit.columns]]
+    df_combined = df_transformed.merge(params_to_merge, on=group_cols, how="left")
 
 
-    return df_data, fixed_columns, medium_columns, supplement_columns, df_predict_modified_gompertz
+
+    return df_data, fixed_columns, medium_columns, supplement_columns, df_combined, df_predict_modified_gompertz
 
 
 def solve_fba(df:pd.DataFrame,
