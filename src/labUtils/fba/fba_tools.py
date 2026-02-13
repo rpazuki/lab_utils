@@ -2,7 +2,8 @@ import pandas as pd
 import cobra
 
 from labUtils.databases import load_experiment_data
-from labUtils.growth_rates import fit_max_growth_rate_per_series, fit_modified_gompertz_per_series, transform_to_log_n_n0
+from labUtils.growth_rates import fit_max_growth_rate_per_series, fit_modified_gompertz_per_series, transform_to_log_n_n0, predict_modified_gompertz_per_series
+from labUtils.media_bot import calculate_replicate_statistics_by_custom
 from labUtils.utils import smart_join_drop_right
 
 # Helper functions
@@ -57,14 +58,34 @@ def load_fba_data(per_strain: bool = True,
         else:
             supplement_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
     #
-    # df_transformed = transform_to_log_n_n0(df_parsed_data)
-    # df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed)
-    # df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed)
-    # df_combined_fit = smart_join_drop_right(df_fit_modified_gompertz, df_fit_max_growth_rate)
+    if replication == "replicates":
+        df_parsed_data = calculate_replicate_statistics_by_custom(df_parsed_data,
+                                                                      strain_pattern="[A-Za-z]+",
+                                                                      custom_rules={
+                                                                          "SLAB":{ "direction": "alphabetical",
+                                                                          "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
+                                                                          },
+                                                                          "purB":{ "direction": "alphabetical",
+                                                                                   "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
+                                                                          },
+                                                                          "ilvI":{"direction": "alphabetical",
+                                                                                  "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
+                                                                          },
+                                                                          "WT":{"direction": "alphabetical",
+                                                                                "sample_size": 2 # e.g A1, A2 - B1, B2
+                                                                          },
+                                                                          "BLANK":{"direction": "alphabetical",
+                                                                                   "sample_size": 1 # e.g A1 - B1
+                                                                          }})
+    df_transformed = transform_to_log_n_n0(df_parsed_data)
+    df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed)
+    df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed)
+    df_combined_fit = smart_join_drop_right(df_fit_modified_gompertz, df_fit_max_growth_rate)
+    df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed, df_combined_fit)
 
 
 
-    return df_data, fixed_columns, medium_columns, supplement_columns, df_parsed_data
+    return df_data, fixed_columns, medium_columns, supplement_columns, df_predict_modified_gompertz
 
 
 def solve_fba(df:pd.DataFrame,
