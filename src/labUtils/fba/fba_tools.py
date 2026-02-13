@@ -22,15 +22,30 @@ def load_fba_data(per_strain: bool = True,
                 experiment: str = "mediabotJLF1",
                 well_column: str = "wells",
                 gr_column: str = "mv_mu_max",
-                 group_cols: list[str] = ["well"],
                 od_cv_mean_threshold: float = 0.0,
                 od_cv_max_threshold: float = 0.0,
                 od_std_max_threshold: float = 0.0,
                 datasource_path:str = "H:/ROBOT_SCIENTIST/E_coli/Growth_rates/2025-10-31-27/processed",
                 levels_csv_file:str = "df_AMN_actual_medium_level.csv",
+                custom_rules={"SLAB":{ "direction": "alphabetical",
+                                       "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
+                                     },
+                              "purB":{ "direction": "alphabetical",
+                                        "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
+                                     },
+                              "ilvI":{"direction": "alphabetical",
+                                      "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
+                                    },
+                              "WT":{"direction": "alphabetical",
+                                    "sample_size": 2 # e.g A1, A2 - B1, B2
+                                   },
+                              "BLANK":{"direction": "alphabetical",
+                                      "sample_size": 1 # e.g A1 - B1
+                                 }
+                            },
                 OD_0_averaging_window:int=4,
                 moving_window_size:int=5,
-                smoothing_iterations:int=2,
+                smoothing_iterations:int=4,
                 smooth_window_size:int=2
                 ) -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame]:
     df_data, _,df_levels, df_parsed_data = load_experiment_data(per_strain=per_strain,
@@ -66,33 +81,30 @@ def load_fba_data(per_strain: bool = True,
     #
     if replication == "replicates":
         df_parsed_data = calculate_replicate_statistics_by_custom(df_parsed_data,
-                                                                      strain_pattern="[A-Za-z]+",
-                                                                      custom_rules={
-                                                                          "SLAB":{ "direction": "alphabetical",
-                                                                          "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
-                                                                          },
-                                                                          "purB":{ "direction": "alphabetical",
-                                                                                   "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
-                                                                          },
-                                                                          "ilvI":{"direction": "alphabetical",
-                                                                                  "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
-                                                                          },
-                                                                          "WT":{"direction": "alphabetical",
-                                                                                "sample_size": 2 # e.g A1, A2 - B1, B2
-                                                                          },
-                                                                          "BLANK":{"direction": "alphabetical",
-                                                                                   "sample_size": 1 # e.g A1 - B1
-                                                                          }})
+                                                                  strain_pattern="[A-Za-z]+",
+                                                                  custom_rules=custom_rules,
+                                                                  )
+        group_cols: list[str] = ["group_id"]
+    else:
+        group_cols: list[str] = ["well"]
+
     df_transformed = transform_to_log_n_n0(df_parsed_data,
                                            OD_0_averaging_window=OD_0_averaging_window,
-                                           transformed_col="log_od_od0")
+                                           transformed_col="log_od_od0",
+                                           group_cols=group_cols)
     df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed, value_col="log_od_od0", fixed_params={"y0": 0.0})
     df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed, value_col="log_od_od0",
                                                             moving_window_size=moving_window_size,
                                                             smoothing_iterations=smoothing_iterations,
-                                                            smooth_window_size=smooth_window_size)
-    df_combined_fit = smart_join_drop_right(df_fit_modified_gompertz, df_fit_max_growth_rate)
-    df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed, df_combined_fit)
+                                                            smooth_window_size=smooth_window_size,
+                                                            group_cols=group_cols)
+    df_combined_fit = smart_join_drop_right(df_fit_modified_gompertz, df_fit_max_growth_rate, on_cols=group_cols)
+    df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed,
+                                                                        df_combined_fit,
+                                                                        value_col="log_od_od0",
+                                                                        standard_deviation_column="od600_std",
+                                                                        save_plot_data=False,
+                                                                        group_cols=group_cols)
 
     fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
     params_to_merge = df_combined_fit[[col for col in fit_cols if col in df_combined_fit.columns]]
