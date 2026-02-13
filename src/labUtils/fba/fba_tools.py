@@ -80,9 +80,9 @@ def load_fba_data(per_strain: bool = True,
             supplement_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
 
     if replication == "replicates":
-        df_prediction_data = df_prediction_data.merge(df_data, on=["group_id"], how="left")
+        df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=["well", "experiment"])
     else:
-        df_prediction_data = df_prediction_data.merge(df_data, on=["well"], how="left")
+        df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=["well", "experiment"])
 
 
 
