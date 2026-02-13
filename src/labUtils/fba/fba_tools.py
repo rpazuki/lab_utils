@@ -27,7 +27,7 @@ def load_fba_data(per_strain: bool = True,
                 od_cv_max_threshold: float = 0.0,
                 od_std_max_threshold: float = 0.0,
                 datasource_path:str = "H:/ROBOT_SCIENTIST/E_coli/Growth_rates/2025-10-31-27/processed",
-                levels_csv_file:str = "df_AMN_actual_medium_level.csv") -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame, pd.DataFrame]:
+                levels_csv_file:str = "df_AMN_actual_medium_level.csv") -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame]:
     df_data, _,df_levels, df_parsed_data = load_experiment_data(per_strain=per_strain,
                                                                 replication=replication,
                                                                 strain=strain,
@@ -86,11 +86,11 @@ def load_fba_data(per_strain: bool = True,
 
     fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
     params_to_merge = df_combined_fit[[col for col in fit_cols if col in df_combined_fit.columns]]
-    df_combined = df_transformed.merge(params_to_merge, on=group_cols, how="left")
+    df_combined = df_predict_modified_gompertz.merge(params_to_merge, on=group_cols, how="left")
 
 
 
-    return df_data, fixed_columns, medium_columns, supplement_columns, df_combined, df_predict_modified_gompertz
+    return df_data, fixed_columns, medium_columns, supplement_columns, df_combined
 
 
 def solve_fba(df:pd.DataFrame,
