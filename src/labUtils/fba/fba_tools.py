@@ -83,6 +83,8 @@ def load_fba_data(per_strain: bool = True,
         df_parsed_data = calculate_replicate_statistics_by_custom(df_parsed_data,
                                                                   strain_pattern="[A-Za-z]+",
                                                                   custom_rules=custom_rules,
+                                                                  value_column_name="od600",
+                                                                  ddof=0,
                                                                   )
         group_cols: list[str] = ["group_id"]
     else:
@@ -92,13 +94,17 @@ def load_fba_data(per_strain: bool = True,
                                            OD_0_averaging_window=OD_0_averaging_window,
                                            transformed_col="log_od_od0",
                                            group_cols=group_cols)
-    df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed, value_col="log_od_od0", fixed_params={"y0": 0.0})
+    df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed,
+                                                                value_col="log_od_od0",
+                                                                fixed_params={"y0": 0.0})
     df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed, value_col="log_od_od0",
                                                             moving_window_size=moving_window_size,
                                                             smoothing_iterations=smoothing_iterations,
                                                             smooth_window_size=smooth_window_size,
                                                             group_cols=group_cols)
-    df_combined_fit = smart_join_drop_right(df_fit_max_growth_rate, df_fit_modified_gompertz, on_cols=group_cols)
+    df_combined_fit = smart_join_drop_right(df_fit_max_growth_rate,
+                                            df_fit_modified_gompertz,
+                                            on_cols=group_cols)
     df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed,
                                                                         df_combined_fit,
                                                                         value_col="log_od_od0",
