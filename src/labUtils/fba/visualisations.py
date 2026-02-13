@@ -571,6 +571,14 @@ def build_reaction_escher_builder(
         f"search_depth={search_depth} and expansion_mode={expansion_mode}"
     )
 
+    reaction_label = {
+        "reaction_label": {
+            "x": 30,
+            "y": 50,
+            "text": f"Reaction: {reaction_name}"
+        }
+    }
+
     builder, map_stats = _build_escher_map_and_builder_from_reactions(
         reaction_objects=reaction_objects,
         map_name=map_name,
@@ -583,6 +591,7 @@ def build_reaction_escher_builder(
         hide_secondary_metabolites=hide_secondary_metabolites,
         hide_all_labels=hide_all_labels,
         reaction_scale_preset=reaction_scale_preset,
+        text_labels=reaction_label,
     )
 
     if verbose:
@@ -702,6 +711,15 @@ def build_path_between_reactions_escher_builder(
     map_id = f"iML1515_path_{start_reaction.id}_to_{end_reaction.id}"
     map_description = f"Auto-generated Escher path map from {start_reaction.id} to {end_reaction.id}"
 
+
+    reaction_label = {
+        "reaction_label": {
+            "x": 30,
+            "y": 50,
+            "text": f"Reaction: {start_reaction.id} -> {end_reaction.id}"
+        }
+    }
+
     builder, map_stats = _build_escher_map_and_builder_from_reactions(
         reaction_objects=reaction_objects,
         map_name=map_name,
@@ -714,6 +732,7 @@ def build_path_between_reactions_escher_builder(
         hide_secondary_metabolites=hide_secondary_metabolites,
         hide_all_labels=hide_all_labels,
         reaction_scale_preset=reaction_scale_preset,
+        text_labels=reaction_label,
     )
 
     if verbose:
@@ -871,6 +890,13 @@ def build_metabolite_escher_builder(
         f"Auto-generated Escher map for metabolite {seed_metabolite.id} with search_depth={search_depth}"
     )
 
+    metabolite_label = {
+        "metabolite_label": {
+            "x": 30,
+            "y": 50,
+            "text": f"Metabolite: {seed_metabolite}"
+        }
+    }
     builder, map_stats = _build_escher_map_and_builder_from_reactions(
         reaction_objects=reaction_objects,
         map_name=map_name,
@@ -883,6 +909,7 @@ def build_metabolite_escher_builder(
         hide_secondary_metabolites=hide_secondary_metabolites,
         hide_all_labels=hide_all_labels,
         reaction_scale_preset=reaction_scale_preset,
+        text_labels=metabolite_label,
     )
 
     if verbose:
@@ -1025,7 +1052,13 @@ def build_path_between_metabolites_escher_builder(
     map_name = f"iML1515.metpath.{start_met.id}_to_{end_met.id}"
     map_id = f"iML1515_metpath_{start_met.id}_to_{end_met.id}"
     map_description = f"Auto-generated Escher metabolite path map from {start_met.id} to {end_met.id}"
-
+    metabolite_label = {
+        "metabolite_label": {
+            "x": 30,
+            "y": 50,
+            "text": f"Reaction path: {start_met.id} -> {end_met.id}"
+        }
+    }
     builder, map_stats = _build_escher_map_and_builder_from_reactions(
         reaction_objects=reaction_objects,
         map_name=map_name,
@@ -1038,6 +1071,7 @@ def build_path_between_metabolites_escher_builder(
         hide_secondary_metabolites=hide_secondary_metabolites,
         hide_all_labels=hide_all_labels,
         reaction_scale_preset=reaction_scale_preset,
+        text_labels=metabolite_label,
     )
 
     if verbose:
@@ -1185,7 +1219,7 @@ def build_gene_escher_builder(
     gene_label = {
         "gene_label": {
             "x": 30,
-            "y": 30,
+            "y": 50,
             "text": f"Gene: {gene.id} ({gene.name})"
         }
     }
@@ -1219,5 +1253,144 @@ def build_gene_escher_builder(
         print("Reactions per depth:")
         for dep in sorted(depth_counts):
             print(f"  depth {dep}: {depth_counts[dep]}")
+        print("=" * 60)
+    return builder
+
+
+def build_flux_comparison_escher_builder(
+    model,
+    df_fluxes_wt,
+    df_shadow_prices_wt,
+    wt_index,
+    df_fluxes_pert,
+    df_shadow_prices_pert,
+    pert_index,
+    comparison_mode,
+    flux_threshold=1e-9,
+    diff_threshold=1e-6,
+    map_json_path=None,
+    hide_secondary_metabolites=True,
+    hide_all_labels=False,
+    reaction_scale_preset="GaBuRd",
+    shadow_mode="pert",
+    verbose=True,
+ ):
+    """Build Escher map based on flux comparison between WT and perturbed.
+
+    1. For the "wt_nonzero_pert_zero" mode, the map will show reactions that have
+    a non-zero flux in WT and zero flux in the perturbed condition, based on the specified flux_threshold.
+    2. For the "pert_nonzero_wt_zero" mode, the map will show reactions that have
+    a non-zero flux in the perturbed condition and zero flux in WT, based on the specified flux_threshold.
+    3. For the "diff_above" mode, the map will show reactions where the absolute
+    flux difference between WT and perturbed is above the specified diff_threshold.
+
+    comparison_mode options:
+    - "wt_nonzero_pert_zero"
+    - "pert_nonzero_wt_zero"
+    - "diff_above"
+    """
+    if wt_index >= len(df_fluxes_wt):
+        raise IndexError(
+            f"wt_index {wt_index} is out of bounds for WT fluxes length {len(df_fluxes_wt)}"
+        )
+    if pert_index >= len(df_fluxes_pert):
+        raise IndexError(
+            f"pert_index {pert_index} is out of bounds for perturbed fluxes length {len(df_fluxes_pert)}"
+        )
+    if wt_index >= len(df_shadow_prices_wt):
+        raise IndexError(
+            f"wt_index {wt_index} is out of bounds for WT shadow prices length {len(df_shadow_prices_wt)}"
+        )
+    if pert_index >= len(df_shadow_prices_pert):
+        raise IndexError(
+            f"pert_index {pert_index} is out of bounds for perturbed shadow prices length {len(df_shadow_prices_pert)}"
+        )
+    valid_modes = {
+        "wt_nonzero_pert_zero",
+        "pert_nonzero_wt_zero",
+        "diff_above",
+    }
+    if comparison_mode not in valid_modes:
+        raise ValueError(
+            f"comparison_mode must be one of {sorted(valid_modes)}; got '{comparison_mode}'"
+        )
+    if flux_threshold < 0:
+        raise ValueError("flux_threshold must be non-negative")
+    if diff_threshold < 0:
+        raise ValueError("diff_threshold must be non-negative")
+    valid_shadow_modes = {"wt", "pert", "diff"}
+    if shadow_mode not in valid_shadow_modes:
+        raise ValueError(
+            f"shadow_mode must be one of {sorted(valid_shadow_modes)}; got '{shadow_mode}'"
+        )
+    flux_wt = df_fluxes_wt.iloc[wt_index]
+    flux_pert = df_fluxes_pert.iloc[pert_index]
+    shadow_wt = df_shadow_prices_wt.iloc[wt_index]
+    shadow_pert = df_shadow_prices_pert.iloc[pert_index]
+    reaction_ids = [rxn.id for rxn in model.reactions]
+    selected_reactions = []
+    for rxn_id in reaction_ids:
+        wt_val = float(flux_wt.get(rxn_id, 0.0) or 0.0)
+        pert_val = float(flux_pert.get(rxn_id, 0.0) or 0.0)
+        wt_nz = abs(wt_val) > flux_threshold
+        pert_nz = abs(pert_val) > flux_threshold
+        if comparison_mode == "wt_nonzero_pert_zero":
+            if wt_nz and not pert_nz:
+                selected_reactions.append(rxn_id)
+        elif comparison_mode == "pert_nonzero_wt_zero":
+            if pert_nz and not wt_nz:
+                selected_reactions.append(rxn_id)
+        else:
+            if abs(wt_val - pert_val) >= diff_threshold:
+                selected_reactions.append(rxn_id)
+    if not selected_reactions:
+        raise ValueError("No reactions matched the comparison criteria.")
+    reaction_objects = [model.reactions.get_by_id(rid) for rid in sorted(selected_reactions)]
+    if map_json_path is None:
+        map_json_path = (
+            f"iML1515.compare.{comparison_mode}.wt{wt_index}.pert{pert_index}.json"
+        )
+    map_name = f"iML1515.compare.{comparison_mode}.wt{wt_index}.pert{pert_index}"
+    map_id = f"iML1515_compare_{comparison_mode}_wt{wt_index}_pert{pert_index}"
+    map_description = (
+        f"Flux comparison map ({comparison_mode}) between WT index {wt_index} and pert index {pert_index}"
+    )
+    if shadow_mode == "wt":
+        metabolite_data = shadow_wt
+    elif shadow_mode == "diff":
+        metabolite_data = shadow_pert - shadow_wt
+    else:
+        metabolite_data = shadow_pert
+
+    comparision_label = {
+        "comparision_label": {
+            "x": 30,
+            "y": 50,
+            "text": f"Mode: {comparison_mode}" f" threshold: {diff_threshold}" if comparison_mode == "diff_above" else ""
+        }
+    }
+    builder, map_stats = _build_escher_map_and_builder_from_reactions(
+        reaction_objects=reaction_objects,
+        map_name=map_name,
+        map_id=map_id,
+        map_description=map_description,
+        map_json_path=map_json_path,
+        model=model,
+        reaction_data=flux_pert,
+        metabolite_data=metabolite_data,
+        hide_secondary_metabolites=hide_secondary_metabolites,
+        hide_all_labels=hide_all_labels,
+        reaction_scale_preset=reaction_scale_preset,
+        text_labels=comparision_label,
+    )
+    if verbose:
+        print("=" * 60)
+        print(f"Comparison mode: {comparison_mode}")
+        print(f"WT index: {wt_index}")
+        print(f"Pert index: {pert_index}")
+        print(f"Flux threshold: {flux_threshold}")
+        print(f"Diff threshold: {diff_threshold}")
+        print(f"Selected reactions: {len(selected_reactions)}")
+        print(f"Map output: {map_stats['map_json_path']}")
         print("=" * 60)
     return builder
