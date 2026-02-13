@@ -98,7 +98,7 @@ def load_fba_data(per_strain: bool = True,
                                                             smoothing_iterations=smoothing_iterations,
                                                             smooth_window_size=smooth_window_size,
                                                             group_cols=group_cols)
-    df_combined_fit = smart_join_drop_right(df_fit_modified_gompertz, df_fit_max_growth_rate, on_cols=group_cols)
+    df_combined_fit = smart_join_drop_right(df_fit_max_growth_rate, df_fit_modified_gompertz, on_cols=group_cols)
     df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed,
                                                                         df_combined_fit,
                                                                         value_col="log_od_od0",
