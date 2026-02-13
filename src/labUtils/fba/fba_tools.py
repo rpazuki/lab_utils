@@ -100,7 +100,8 @@ def load_fba_data(per_strain: bool = True,
                                             group_cols=group_cols)
     df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed,
                                                                 value_col="log_od_od0",
-                                                                fixed_params={"y0": 0.0})
+                                                                fixed_params={"y0": 0.0},
+                                                                group_cols=group_cols)
     df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed, value_col="log_od_od0",
                                                             moving_window_size=moving_window_size,
                                                             smoothing_iterations=smoothing_iterations,
