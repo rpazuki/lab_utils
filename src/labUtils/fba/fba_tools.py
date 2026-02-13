@@ -87,13 +87,17 @@ def load_fba_data(per_strain: bool = True,
                                                                   ddof=0,
                                                                   )
         group_cols: list[str] = ["group_id"]
+        df_transformed = transform_to_log_n_n0(df_parsed_data,
+                                            OD_0_averaging_window=OD_0_averaging_window,
+                                            transformed_col="log_od_od0",
+                                            value_col="od600_mean",
+                                            group_cols=group_cols)
     else:
         group_cols: list[str] = ["well"]
-
-    df_transformed = transform_to_log_n_n0(df_parsed_data,
-                                           OD_0_averaging_window=OD_0_averaging_window,
-                                           transformed_col="log_od_od0",
-                                           group_cols=group_cols)
+        df_transformed = transform_to_log_n_n0(df_parsed_data,
+                                            OD_0_averaging_window=OD_0_averaging_window,
+                                            transformed_col="log_od_od0",
+                                            group_cols=group_cols)
     df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed,
                                                                 value_col="log_od_od0",
                                                                 fixed_params={"y0": 0.0})
