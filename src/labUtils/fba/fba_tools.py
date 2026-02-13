@@ -27,26 +27,6 @@ def load_fba_data(per_strain: bool = True,
                 od_std_max_threshold: float = 0.0,
                 datasource_path:str = "H:/ROBOT_SCIENTIST/E_coli/Growth_rates/2025-10-31-27/processed",
                 levels_csv_file:str = "df_AMN_actual_medium_level.csv",
-                custom_rules={"SLAB":{ "direction": "alphabetical",
-                                       "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
-                                     },
-                              "purB":{ "direction": "alphabetical",
-                                        "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
-                                     },
-                              "ilvI":{"direction": "alphabetical",
-                                      "sample_size": 3 # e.g A1, A2, A3 - B1, B2, B3
-                                    },
-                              "WT":{"direction": "alphabetical",
-                                    "sample_size": 2 # e.g A1, A2 - B1, B2
-                                   },
-                              "BLANK":{"direction": "alphabetical",
-                                      "sample_size": 1 # e.g A1 - B1
-                                 }
-                            },
-                OD_0_averaging_window:int=4,
-                moving_window_size:int=5,
-                smoothing_iterations:int=4,
-                smooth_window_size:int=2
                 ) -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame]:
     df_data, _,df_levels, df_prediction_data = load_experiment_data(per_strain=per_strain,
                                                                     replication=replication,
@@ -80,9 +60,9 @@ def load_fba_data(per_strain: bool = True,
             supplement_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
 
     if replication == "replicates":
-        df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=["well", "experiment"])
+        df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=[well_column, "experiment"])
     else:
-        df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=["well", "experiment"])
+        df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=[well_column, "experiment"])
 
 
 
