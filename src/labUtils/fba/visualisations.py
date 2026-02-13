@@ -298,7 +298,8 @@ def _build_escher_map_and_builder_from_reactions(
     hide_secondary_metabolites=True,
     hide_all_labels=False,
     reaction_scale_preset="GaBuRd",
-):
+    text_labels=None,
+ ):
     import json
     import os
 
@@ -415,6 +416,8 @@ def _build_escher_map_and_builder_from_reactions(
                     break
 
     canvas_height = max(600, 260 + (len(reaction_objects) * 220))
+    canvas = {"x": 0, "y": 0, "width": 900, "height": canvas_height}
+    label_block = text_labels if text_labels is not None else {}
 
     map_data = [
         {
@@ -427,8 +430,8 @@ def _build_escher_map_and_builder_from_reactions(
         {
             "reactions": reactions,
             "nodes": nodes,
-            "text_labels": {},
-            "canvas": {"x": 0, "y": 0, "width": 900, "height": canvas_height},
+            "text_labels": label_block,
+            "canvas": canvas,
         },
     ]
 
@@ -1049,4 +1052,172 @@ def build_path_between_metabolites_escher_builder(
         print(f"Map output: {map_stats['map_json_path']}")
         print("=" * 60)
 
+    return builder
+
+
+def build_gene_escher_builder(
+    gene_name=None,
+    gene_id=None,
+    df_fluxes=None,
+    df_shadow_prices=None,
+    model=None,
+    solution_index=0,
+    search_depth=0,
+    expansion_mode="both",
+    nonzero_only=False,
+    flux_threshold=1e-9,
+    keep_seed_reactions=True,
+    map_json_path=None,
+    hide_secondary_metabolites=True,
+    hide_all_labels=False,
+    reaction_scale_preset="GaBuRd",
+    verbose=True,
+ ):
+    """Build and return an Escher Builder for reactions regulated by a gene.
+
+    Accepts either gene_id or gene_name. If both are provided, gene_id wins.
+
+    search_depth logic mirrors build_reaction_escher_builder:
+    - depth 0: only reactions directly annotated to the gene
+    - depth 1+: expand via metabolites of discovered reactions
+    """
+    if model is None:
+        raise ValueError("model must be provided")
+    if df_fluxes is None or df_shadow_prices is None:
+        raise ValueError("df_fluxes and df_shadow_prices must be provided")
+    if solution_index >= len(df_fluxes):
+        raise IndexError(
+            f"solution_index {solution_index} is out of bounds for fluxes length {len(df_fluxes)}"
+        )
+    if solution_index >= len(df_shadow_prices):
+        raise IndexError(
+            f"solution_index {solution_index} is out of bounds for shadow prices length {len(df_shadow_prices)}"
+        )
+    if not isinstance(search_depth, int) or search_depth < 0:
+        raise ValueError("search_depth must be a non-negative integer")
+    if flux_threshold < 0:
+        raise ValueError("flux_threshold must be non-negative")
+    valid_expansion_modes = {"both", "reactants_only", "products_only"}
+    if expansion_mode not in valid_expansion_modes:
+        raise ValueError(
+            f"expansion_mode must be one of {sorted(valid_expansion_modes)}; got '{expansion_mode}'"
+        )
+    gene = None
+    if gene_id:
+        if gene_id in model.genes:
+            gene = model.genes.get_by_id(gene_id)
+        else:
+            raise KeyError(f"Gene id '{gene_id}' not found in model")
+    else:
+        if not gene_name:
+            raise ValueError("Provide gene_id or gene_name")
+        if gene_name in model.genes:
+            gene = model.genes.get_by_id(gene_name)
+        else:
+            matches = [g for g in model.genes if g.name == gene_name]
+            if len(matches) == 1:
+                gene = matches[0]
+            elif len(matches) > 1:
+                raise ValueError(
+                    f"Multiple genes match name '{gene_name}'. Use the gene ID instead."
+                )
+            else:
+                raise KeyError(f"Gene '{gene_name}' not found in model")
+    seed_reactions = {rxn.id for rxn in gene.reactions}
+    if not seed_reactions:
+        raise ValueError(f"Gene '{gene.id}' has no annotated reactions in the model")
+    flux_row = df_fluxes.iloc[solution_index]
+    def metabolites_for_expansion(reaction_obj):
+        if expansion_mode == "both":
+            return [met for met, coeff in reaction_obj.metabolites.items() if coeff != 0]
+        if expansion_mode == "reactants_only":
+            return [met for met, coeff in reaction_obj.metabolites.items() if coeff < 0]
+        return [met for met, coeff in reaction_obj.metabolites.items() if coeff > 0]
+    visited_reaction_ids = set(seed_reactions)
+    reaction_depth = {rxn_id: 0 for rxn_id in seed_reactions}
+    frontier = set(seed_reactions)
+    for depth in range(1, search_depth + 1):
+        next_frontier = set()
+        for rxn_id in frontier:
+            rxn_obj = model.reactions.get_by_id(rxn_id)
+            for metabolite in metabolites_for_expansion(rxn_obj):
+                for neighbor_reaction in metabolite.reactions:
+                    if neighbor_reaction.id not in visited_reaction_ids:
+                        visited_reaction_ids.add(neighbor_reaction.id)
+                        reaction_depth[neighbor_reaction.id] = depth
+                        next_frontier.add(neighbor_reaction.id)
+        frontier = next_frontier
+        if not frontier:
+            break
+    def get_flux_value(reaction_id):
+        val = flux_row.get(reaction_id, 0.0)
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return 0.0
+    filtered_reaction_ids = set(visited_reaction_ids)
+    if nonzero_only:
+        filtered_reaction_ids = {
+            rid
+            for rid in visited_reaction_ids
+            if abs(get_flux_value(rid)) > flux_threshold
+        }
+        if keep_seed_reactions:
+            filtered_reaction_ids.update(seed_reactions)
+    reaction_objects = [
+        model.reactions.get_by_id(rxn_id) for rxn_id in sorted(filtered_reaction_ids)
+    ]
+    if not reaction_objects:
+        raise ValueError(
+            "No reactions left to plot after applying nonzero flux filter. "
+            "Lower flux_threshold, disable nonzero_only, or change solution_index."
+        )
+    if map_json_path is None:
+        map_json_path = (
+            f"iML1515.gene.{gene.id}.depth{search_depth}.{expansion_mode}.json"
+        )
+    map_name = f"iML1515.gene.{gene.id}.depth{search_depth}.{expansion_mode}"
+    map_id = f"iML1515_gene_{gene.id}_d{search_depth}_{expansion_mode}"
+    map_description = (
+        f"Auto-generated Escher map for gene {gene.id} with "
+        f"search_depth={search_depth} and expansion_mode={expansion_mode}"
+    )
+    gene_label = {
+        "gene_label": {
+            "x": 30,
+            "y": 30,
+            "text": f"Gene: {gene.id} ({gene.name})"
+        }
+    }
+    builder, map_stats = _build_escher_map_and_builder_from_reactions(
+        reaction_objects=reaction_objects,
+        map_name=map_name,
+        map_id=map_id,
+        map_description=map_description,
+        map_json_path=map_json_path,
+        model=model,
+        reaction_data=df_fluxes.iloc[solution_index],
+        metabolite_data=df_shadow_prices.iloc[solution_index],
+        hide_secondary_metabolites=hide_secondary_metabolites,
+        hide_all_labels=hide_all_labels,
+        reaction_scale_preset=reaction_scale_preset,
+        text_labels=gene_label,
+    )
+    if verbose:
+        depth_counts = {}
+        for rxn_id, dep in reaction_depth.items():
+            depth_counts[dep] = depth_counts.get(dep, 0) + 1
+        print("=" * 60)
+        print(f"Seed gene: {gene.id} ({gene.name})")
+        print(f"Requested search_depth: {search_depth}")
+        print(f"Expansion mode: {expansion_mode}")
+        print(f"Nonzero only: {nonzero_only} (threshold={flux_threshold})")
+        print(f"Discovered reactions (topology): {len(visited_reaction_ids)}")
+        print(f"Plotted reactions (after filter): {map_stats['reaction_count']}")
+        print(f"Discovered metabolites (unique): {map_stats['metabolite_count']}")
+        print(f"Map output: {map_stats['map_json_path']}")
+        print("Reactions per depth:")
+        for dep in sorted(depth_counts):
+            print(f"  depth {dep}: {depth_counts[dep]}")
+        print("=" * 60)
     return builder
