@@ -47,18 +47,18 @@ def load_fba_data(per_strain: bool = True,
                 moving_window_size:int=5,
                 smoothing_iterations:int=4,
                 smooth_window_size:int=2
-                ) -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame, pd.DataFrame]:
-    df_data, _,df_levels, df_parsed_data = load_experiment_data(per_strain=per_strain,
-                                                                replication=replication,
-                                                                strain=strain,
-                                                                experiment=experiment,
-                                                                well_column=well_column,
-                                                                gr_column=gr_column,
-                                                                od_cv_mean_threshold=od_cv_mean_threshold,
-                                                                od_cv_max_threshold=od_cv_max_threshold,
-                                                                od_std_max_threshold=od_std_max_threshold,
-                                                                datasource_path=datasource_path,
-                                                                levels_csv_file=levels_csv_file)
+                ) -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame]:
+    df_data, _,df_levels, df_prediction_data = load_experiment_data(per_strain=per_strain,
+                                                                    replication=replication,
+                                                                    strain=strain,
+                                                                    experiment=experiment,
+                                                                    well_column=well_column,
+                                                                    gr_column=gr_column,
+                                                                    od_cv_mean_threshold=od_cv_mean_threshold,
+                                                                    od_cv_max_threshold=od_cv_max_threshold,
+                                                                    od_std_max_threshold=od_std_max_threshold,
+                                                                    datasource_path=datasource_path,
+                                                                    levels_csv_file=levels_csv_file)
     fixed_columns = []
     medium_columns = []
     supplement_columns = []
@@ -78,52 +78,15 @@ def load_fba_data(per_strain: bool = True,
             medium_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
         else:
             supplement_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
-    #
+
     if replication == "replicates":
-        df_parsed_data = calculate_replicate_statistics_by_custom(df_parsed_data,
-                                                                  strain_pattern="[A-Za-z]+",
-                                                                  custom_rules=custom_rules,
-                                                                  value_column_name="od600",
-                                                                  ddof=0,
-                                                                  )
-        group_cols: list[str] = ["group_id"]
-        df_transformed = transform_to_log_n_n0(df_parsed_data,
-                                            OD_0_averaging_window=OD_0_averaging_window,
-                                            transformed_col="log_od_od0",
-                                            value_col="od600_mean",
-                                            group_cols=group_cols)
+        df_prediction_data = df_prediction_data.merge(df_data, on=["group_id"], how="left")
     else:
-        group_cols: list[str] = ["well"]
-        df_transformed = transform_to_log_n_n0(df_parsed_data,
-                                            OD_0_averaging_window=OD_0_averaging_window,
-                                            transformed_col="log_od_od0",
-                                            group_cols=group_cols)
-    df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed,
-                                                                value_col="log_od_od0",
-                                                                fixed_params={"y0": 0.0},
-                                                                group_cols=group_cols)
-    df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed, value_col="log_od_od0",
-                                                            moving_window_size=moving_window_size,
-                                                            smoothing_iterations=smoothing_iterations,
-                                                            smooth_window_size=smooth_window_size,
-                                                            group_cols=group_cols)
-    df_combined_fit = smart_join_drop_right(df_fit_max_growth_rate,
-                                            df_fit_modified_gompertz,
-                                            on_cols=group_cols)
-    # df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed,
-    #                                                                     df_combined_fit,
-    #                                                                     value_col="log_od_od0",
-    #                                                                     standard_deviation_column="od600_std",
-    #                                                                     save_plot_data=False,
-    #                                                                     group_cols=group_cols)
-
-    # fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
-    # params_to_merge = df_combined_fit[[col for col in fit_cols if col in df_combined_fit.columns]]
-    # df_combined = df_predict_modified_gompertz.merge(params_to_merge, on=group_cols, how="left")
+        df_prediction_data = df_prediction_data.merge(df_data, on=["well"], how="left")
 
 
 
-    return df_data, fixed_columns, medium_columns, supplement_columns, df_transformed, df_combined_fit
+    return df_data, fixed_columns, medium_columns, supplement_columns, df_prediction_data
 
 
 def solve_fba(df:pd.DataFrame,

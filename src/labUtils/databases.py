@@ -43,11 +43,11 @@ def load_experiment_data(per_strain: bool = True,
                 od_cv_mean = ('od_CV', 'mean'),
             ).reset_index()
         merging_directories = [d for d in (Path(datasource_path) / replication).iterdir() if not d.name.startswith(".")]
-        df_parsed_data_list = [ pd.read_csv(d / "parsed_data.csv") for d in merging_directories if (d / "parsed_data.csv").exists() ]
-        for df, d in zip(df_parsed_data_list, merging_directories):
+        df_prediction_data_list = [ pd.read_csv(d / "predictions.csv") for d in merging_directories if (d / "predictions.csv").exists() ]
+        for df, d in zip(df_prediction_data_list, merging_directories):
             df["experiment"] = d.name
-        df_parsed_data = pd.concat(df_parsed_data_list, ignore_index=True)
-        df_parsed_data = df_parsed_data[df_parsed_data["strain"].str.startswith(strain)].copy().reset_index(drop=True)
+        df_prediction_data = pd.concat(df_prediction_data_list, ignore_index=True)
+        df_prediction_data = df_prediction_data[df_prediction_data["strain"].str.startswith(strain)].copy().reset_index(drop=True)
 
 
     else:
@@ -64,7 +64,7 @@ def load_experiment_data(per_strain: bool = True,
                 od_std_mean = ( 'od600_std', 'mean' ),
             ).reset_index()
 
-            df_parsed_data = pd.read_csv(growth_data_path / "parsed_data.csv")
+            df_prediction_data = pd.read_csv(growth_data_path / "predictions.csv")
 
     #
     exp_data = pd.read_csv(exp_data_path / "df_flux.csv")
@@ -163,7 +163,7 @@ def load_experiment_data(per_strain: bool = True,
 
     combinded_data["group"] = combinded_data["supplements_unified"].apply(classify)
     #===============================
-    return combinded_data, exp_data, df_levels, df_parsed_data
+    return combinded_data, exp_data, df_levels, df_prediction_data
 
 
 def load_multiple_experiments_data(per_strain: bool = True,
