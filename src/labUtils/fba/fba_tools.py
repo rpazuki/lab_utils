@@ -59,11 +59,8 @@ def load_fba_data(per_strain: bool = True,
         else:
             supplement_columns.append(col[:-2])  # Remove the trailing '_i' from the column name
 
-    if replication == "replicates":
-        df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=[well_column, "experiment"])
-    else:
-        df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=[well_column, "experiment"])
-
+    # Does not work on post_replicates, because predictions is per well, but the growth_rate is per group
+    df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=[well_column, "experiment"])
 
 
     return df_data, fixed_columns, medium_columns, supplement_columns, df_prediction_data
