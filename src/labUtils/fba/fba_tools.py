@@ -86,7 +86,7 @@ def load_fba_data(per_strain: bool = True,
     df_transformed = transform_to_log_n_n0(df_parsed_data,
                                            OD_0_averaging_window=OD_0_averaging_window,
                                            transformed_col="log_od_od0")
-    df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed, value_col="log_od_od0")
+    df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed, value_col="log_od_od0", fixed_params={"y0": 0.0})
     df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed, value_col="log_od_od0",
                                                             moving_window_size=moving_window_size,
                                                             smoothing_iterations=smoothing_iterations,
