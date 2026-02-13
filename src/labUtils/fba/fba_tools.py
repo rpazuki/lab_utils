@@ -47,7 +47,7 @@ def load_fba_data(per_strain: bool = True,
                 moving_window_size:int=5,
                 smoothing_iterations:int=4,
                 smooth_window_size:int=2
-                ) -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame]:
+                ) -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame, pd.DataFrame]:
     df_data, _,df_levels, df_parsed_data = load_experiment_data(per_strain=per_strain,
                                                                 replication=replication,
                                                                 strain=strain,
@@ -110,20 +110,20 @@ def load_fba_data(per_strain: bool = True,
     df_combined_fit = smart_join_drop_right(df_fit_max_growth_rate,
                                             df_fit_modified_gompertz,
                                             on_cols=group_cols)
-    df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed,
-                                                                        df_combined_fit,
-                                                                        value_col="log_od_od0",
-                                                                        standard_deviation_column="od600_std",
-                                                                        save_plot_data=False,
-                                                                        group_cols=group_cols)
+    # df_predict_modified_gompertz = predict_modified_gompertz_per_series(df_transformed,
+    #                                                                     df_combined_fit,
+    #                                                                     value_col="log_od_od0",
+    #                                                                     standard_deviation_column="od600_std",
+    #                                                                     save_plot_data=False,
+    #                                                                     group_cols=group_cols)
 
-    fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
-    params_to_merge = df_combined_fit[[col for col in fit_cols if col in df_combined_fit.columns]]
-    df_combined = df_predict_modified_gompertz.merge(params_to_merge, on=group_cols, how="left")
+    # fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
+    # params_to_merge = df_combined_fit[[col for col in fit_cols if col in df_combined_fit.columns]]
+    # df_combined = df_predict_modified_gompertz.merge(params_to_merge, on=group_cols, how="left")
 
 
 
-    return df_data, fixed_columns, medium_columns, supplement_columns, df_combined
+    return df_data, fixed_columns, medium_columns, supplement_columns, df_transformed, df_combined_fit
 
 
 def solve_fba(df:pd.DataFrame,
