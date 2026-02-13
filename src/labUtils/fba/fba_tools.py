@@ -78,7 +78,7 @@ def load_fba_data(per_strain: bool = True,
                                                                           "BLANK":{"direction": "alphabetical",
                                                                                    "sample_size": 1 # e.g A1 - B1
                                                                           }})
-    df_transformed = transform_to_log_n_n0(df_parsed_data)
+    df_transformed = transform_to_log_n_n0(df_parsed_data, OD_0_averaging_window=4)
     df_fit_modified_gompertz = fit_modified_gompertz_per_series(df_transformed)
     df_fit_max_growth_rate = fit_max_growth_rate_per_series(df_transformed)
     df_combined_fit = smart_join_drop_right(df_fit_modified_gompertz, df_fit_max_growth_rate)
