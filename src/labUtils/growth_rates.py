@@ -521,6 +521,7 @@ def predict_modified_gompertz_per_series(
     group_cols: list[str] = ["well"],
     clip_exp: float = 50.0,
     save_plot_data: bool = False,
+    show_plots: bool = False,
     output_dir: str | Path | None = None,
     standard_deviation_column: str | None = None,
 ) -> pd.DataFrame:
@@ -547,6 +548,8 @@ def predict_modified_gompertz_per_series(
         Directory to save plots (default: None)
     standard_deviation_column : Optional[str]
         Column name containing standard deviation values for error bars in plots (default: None)
+    show_plots : bool
+        Whether to display plots (default: False)
 
     Returns
     -------
@@ -595,6 +598,8 @@ def predict_modified_gompertz_per_series(
 
     if save_plot_data:
         plot_and_save(preds_df, params_df, time_col, value_col, group_cols, output_dir, standard_deviation_column)
+    elif show_plots:
+        plot_and_save(preds_df, params_df, time_col, value_col, group_cols, None, standard_deviation_column, save_plot=False)
 
     return preds_df
 
