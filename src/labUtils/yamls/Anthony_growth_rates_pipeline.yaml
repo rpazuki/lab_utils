@@ -135,18 +135,15 @@ pipelines:
                     df_parsed: df_parsed # The 'df_parsed' that was created above
                     strain_pattern: "[A-Za-z]+" # Example: "strainA1", "strainA2" -> grouped as "strainA"
                     custom_rules:
-                        SLAB:
+                        EGMB:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        purB:
+                            sample_size: 5 # e.g A1, A2, A3 - B1, B2, B3
+                        MG:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        ilvI:
+                            sample_size: 1 # e.g A1 - B1
+                        nan:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        WT:
-                            direction: alphabetical
-                            sample_size: 2 # e.g A1, A2 - B1, B2
+                            sample_size: 1 # e.g A1 - B1
                         BLANK:
                             direction: alphabetical
                             sample_size: 1 # e.g A1 - B1
@@ -340,18 +337,15 @@ pipelines:
                 parameters:
                     df_parsed: df_combined_fit # The 'df_combined_fit' that was created above
                     custom_rules:
-                        SLAB:
+                        EGMB:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        purB:
+                            sample_size: 5 # e.g A1, A2, A3 - B1, B2, B3
+                        MG:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        ilvI:
+                            sample_size: 1 # e.g A1 - B1
+                        nan:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        WT:
-                            direction: alphabetical
-                            sample_size: 2 # e.g A1, A2 - B1, B2
+                            sample_size: 1 # e.g A1 - B1
                         BLANK:
                             direction: alphabetical
                             sample_size: 1 # e.g A1 - B1
@@ -363,18 +357,15 @@ pipelines:
                 parameters:
                     df_parsed: df_combined_fit # The 'df_combined_fit' that was created above
                     custom_rules:
-                        SLAB:
+                        EGMB:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        purB:
+                            sample_size: 5 # e.g A1, A2, A3 - B1, B2, B3
+                        MG:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        ilvI:
+                            sample_size: 1 # e.g A1 - B1
+                        nan:
                             direction: alphabetical
-                            sample_size: 3 # e.g A1, A2, A3 - B1, B2, B3
-                        WT:
-                            direction: alphabetical
-                            sample_size: 2 # e.g A1, A2 - B1, B2
+                            sample_size: 1 # e.g A1 - B1
                         BLANK:
                             direction: alphabetical
                             sample_size: 1 # e.g A1 - B1

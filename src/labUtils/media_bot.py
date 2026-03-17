@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import csv
 import re
 from io import StringIO
 from pathlib import Path
@@ -29,7 +30,10 @@ __all__ = [
 def find_header_row(lines):
     """Locate the measurement table header in a BMG CLARIOstar export."""
     for i, line in enumerate(lines):
-        if line.strip().startswith("Well Row,Well Col,Content,Raw Data"):
+        norm = re.sub(r"\s*,\s*", ",", line.strip()).lower()
+        if norm.startswith("well row,well col,content,raw data"):
+            return i
+        if norm.startswith("well,content,raw data"):
             return i
     raise ValueError("Could not find the data header row (Well Row,Well Col,Content,...) in the raw CSV.")
 
@@ -75,44 +79,88 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
 
     # Read the block starting at the header row
     block = "\n".join(lines[hdr_idx:])
-    df = pd.read_csv(StringIO(block), header=None)
+    rows = list(csv.reader(StringIO(block)))
+    rows = [r for r in rows if any(str(cell).strip() != "" for cell in r)]
+    if not rows:
+        raise ValueError("No rows found after the detected header row in the raw CSV.")
+    max_cols = max(len(r) for r in rows)
+    rows = [r + [""] * (max_cols - len(r)) for r in rows]
+    df = pd.DataFrame(rows)
+
+    # Detect raw-data block structure from the header row
+    header_row = ["" if pd.isna(x) else str(x).strip() for x in df.iloc[0].tolist()]
+    header_norm = [h.lower() for h in header_row]
+
+    raw_data_candidates = [i for i, h in enumerate(header_norm) if h.startswith("raw data")]
+    if not raw_data_candidates:
+        raise ValueError("Could not identify the 'Raw Data' column in the raw CSV header row.")
+
+    raw_data_idx = raw_data_candidates[0]
+
+    has_split_well = "well row" in header_norm and "well col" in header_norm
+    has_combined_well = "well" in header_norm
+    content_idx = header_norm.index("content") if "content" in header_norm else None
+
+    if has_split_well:
+        well_row_idx = header_norm.index("well row")
+        well_col_idx = header_norm.index("well col")
+    elif has_combined_well:
+        well_idx = header_norm.index("well")
+    else:
+        raise ValueError("Could not identify well columns. Expected 'Well Row'/'Well Col' or 'Well'.")
 
     # Row 0 -> header names; Row 1 -> time labels
     time_row = df.iloc[1].tolist()
-    # Time labels start from column 3 (after Well Row, Well Col, Content)
-    cols_fixed = ["well_row", "well_col", "content"]
     times = []
-    for t in time_row[3:]:
+    for t in time_row[raw_data_idx:]:
         t = "" if (pd.isna(t)) else str(t).strip()
         if t.lower() == "time" or t == "":
             continue
         times.append(t)
 
     # Fallback: parse the raw second line directly if needed
-    n_data_cols = df.shape[1] - 3
+    n_data_cols = df.shape[1] - raw_data_idx
     if len(times) < n_data_cols:
-        second_line = lines[hdr_idx + 1]
+        next_non_empty_idx = next((i for i in range(hdr_idx + 1, len(lines)) if lines[i].strip() != ""), None)
+        if next_non_empty_idx is None:
+            raise ValueError("Could not find a non-empty time-label row after the data header row.")
+        second_line = lines[next_non_empty_idx]
         raw_cells = [c.strip() for c in second_line.split(",")]
-        tail = raw_cells[3:]
+        tail = raw_cells[raw_data_idx:]
         if tail and tail[0].lower() == "time":
             tail = tail[1:]
         times = [c for c in tail]  # noqa: C416
 
     times = times[:n_data_cols]
-    final_cols = cols_fixed + times
 
-    # Drop the two header rows and set final column names
-    df = df.iloc[2:].reset_index(drop=True)
-    df = df.iloc[:, : len(final_cols)].copy()
-    df.columns = final_cols
+    # Drop the two header rows and keep only columns needed for parsing
+    n_keep = raw_data_idx + len(times)
+    data_rows = df.iloc[2:].reset_index(drop=True)
+    data_rows = data_rows.iloc[:, :n_keep].copy()
 
-    # Normalize types
-    df["well_row"] = df["well_row"].astype(str).str.strip()
-    df["well_col"] = pd.to_numeric(df["well_col"], errors="coerce").astype("Int64")
+    out_df = pd.DataFrame(index=data_rows.index)
+    if content_idx is not None and content_idx < data_rows.shape[1]:
+        out_df["content"] = data_rows.iloc[:, content_idx]
+    else:
+        out_df["content"] = pd.NA
+
+    if has_split_well:
+        out_df["well_row"] = data_rows.iloc[:, well_row_idx].astype(str).str.strip()
+        out_df["well_col"] = pd.to_numeric(data_rows.iloc[:, well_col_idx], errors="coerce").astype("Int64")
+    else:
+        well_text = data_rows.iloc[:, well_idx].astype(str).str.strip()
+        extracted = well_text.str.extract(r"^\s*([A-Za-z]+)\s*(\d+)\s*$")
+        out_df["well_row"] = extracted[0].str.strip()
+        out_df["well_col"] = pd.to_numeric(extracted[1], errors="coerce").astype("Int64")
+
+    if times:
+        time_values = data_rows.iloc[:, raw_data_idx : raw_data_idx + len(times)].copy()
+        time_values.columns = times
+        out_df = pd.concat([out_df.reset_index(drop=True), time_values.reset_index(drop=True)], axis=1)
 
     # Wide -> long
-    value_vars = [c for c in df.columns if c not in ("well_row", "well_col", "content")]
-    long_df = df.melt(
+    value_vars = [c for c in out_df.columns if c not in ("well_row", "well_col", "content")]
+    long_df = out_df.melt(
         id_vars=["well_row", "well_col", "content"],
         value_vars=value_vars,
         var_name="time_label",
@@ -150,11 +198,56 @@ def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
     """Parse the '=== Experiment Data ===' section as a DataFrame and tidy column names."""
     text = meta_path.read_text(encoding="utf-8", errors="ignore")
     sections = split_sections(text)
-    key = next((k for k in sections if "Experiment Data" in k), None)
+    df = None
+
+    def _try_parse_csv_block(csv_text: str) -> pd.DataFrame | None:
+        try:
+            candidate = pd.read_csv(StringIO(csv_text))
+        except Exception:
+            return None
+        candidate.columns = [str(c).strip() for c in candidate.columns]
+        return candidate if "Well" in candidate.columns else None
+
+    key = next((k for k in sections if "experiment data" in k.lower()), None)
     if key is None:
+        key = next((k for k in sections if "experiment" in k.lower() and "data" in k.lower()), None)
+    if key is None:
+        for section_title, section_text in sections.items():
+            try:
+                probe_df = pd.read_csv(StringIO(section_text))
+            except Exception:
+                continue
+            probe_cols = {str(c).strip().lower() for c in probe_df.columns}
+            if "well" in probe_cols:
+                key = section_title
+                break
+
+    # Parse selected section when available
+    if key is not None:
+        df = pd.read_csv(StringIO(sections[key]))
+        df.columns = [c.strip() for c in df.columns]
+
+    # Fallback 1: file might be plain CSV with no section markers
+    if df is None:
+        df = _try_parse_csv_block(text)
+
+    # Fallback 2: file may have preamble lines before the CSV header
+    if df is None:
+        raw_lines = text.splitlines()
+        start_idx = next(
+            (
+                i
+                for i, ln in enumerate(raw_lines)
+                if "," in ln and any(cell.strip().lower() == "well" for cell in ln.split(","))
+            ),
+            None,
+        )
+        if start_idx is not None:
+            df = _try_parse_csv_block("\n".join(raw_lines[start_idx:]))
+
+    if df is None:
         raise ValueError('Could not find "Experiment Data" section in the metadata file.')
-    df = pd.read_csv(StringIO(sections[key]))
-    df.columns = [c.strip() for c in df.columns]
+
     if "Well" not in df.columns:
         raise ValueError('Experiment Data section is missing a "Well" column.')
 

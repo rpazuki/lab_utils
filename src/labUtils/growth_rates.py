@@ -153,7 +153,16 @@ def fit_max_growth_rate_per_series(
 
         # np.exp(0.1) is used as the upper limit, by assuming the data are log(n/n0) transformed
         if len(y) < min_points or (float(np.nanmax(y)) - float(np.nanmin(y)) <= np.exp(0.1)):
-            out.update({"success": False, "message": "insufficient or flat data"})
+            out.update({"success": False,
+                        "message": "insufficient or flat data",
+                        "mv_mu_max": np.nan,
+                        "mv_r2": np.nan,  # r²
+                        "mv_rmse": np.nan,  # RMSE
+                        "mv_mu_max_time": np.nan,  # Time at which max growth rate occurred
+                        "mv_mu_max_value": np.nan,  # OD value at max growth rate time
+                        "max_value": np.nan,
+                        "max_time": np.nan,}
+                    )
             return out
 
         # Check if we have enough points for the moving window
@@ -162,6 +171,13 @@ def fit_max_growth_rate_per_series(
                 {
                     "success": False,
                     "message": f"insufficient data for window size {moving_window_size} (need >= {moving_window_size} points)",
+                    "mv_mu_max": np.nan,
+                    "mv_r2": np.nan,  # r²
+                    "mv_rmse": np.nan,  # RMSE
+                    "mv_mu_max_time": np.nan,  # Time at which max growth rate occurred
+                    "mv_mu_max_value": np.nan,  # OD value at max growth rate time
+                    "max_value": np.nan,
+                    "max_time": np.nan,
                 }
             )
             return out
@@ -201,7 +217,16 @@ def fit_max_growth_rate_per_series(
             # Handle case where all growth rates are NaN
             valid_mask = np.isfinite(growth_rates)
             if not np.any(valid_mask):
-                out.update({"success": False, "message": "all windows produced invalid growth rates"})
+                out.update({"success": False,
+                            "message": "all windows produced invalid growth rates",
+                            "mv_mu_max": np.nan,
+                            "mv_r2": np.nan,  # r²
+                            "mv_rmse": np.nan,  # RMSE
+                            "mv_mu_max_time": np.nan,  # Time at which max growth rate occurred
+                            "mv_mu_max_value": np.nan,  # OD value at max growth rate time
+                            "max_value": np.nan,
+                            "max_time": np.nan,}
+                            )
                 return out
 
             # Find maximum growth rate among valid windows
@@ -351,7 +376,19 @@ def fit_modified_gompertz_per_series(
 
         # np.exp(0.1) is used as the upper limit, by assuming the data are log(n/n0) transformed
         if len(y) < min_points or (float(np.nanmax(y)) - float(np.nanmin(y)) <= np.exp(0.1)):
-            out.update({"success": False, "message": "insufficient or flat data"})
+            out.update({"success": False,
+                        "message": "insufficient or flat data",
+                        "y0": np.nan,
+                        "A": np.nan,
+                        "mu_max": np.nan,
+                        "lambda": np.nan,
+                        "r2": np.nan,
+                        "rmse": np.nan,
+                        "mu_max_time": np.nan,  # Time at which max growth rate occurs (inflection point)
+                        "mu_max_value": np.nan,  # OD value at max growth rate time
+                        "max_value": np.nan,
+                        "max_time": np.nan,
+                    })
             return out
 
         # Heuristic initial guesses for all parameters
@@ -790,7 +827,7 @@ def plot_and_save(
         keys = tuple(group_row[col] for col in group_cols)
         if len(keys) == 1:
             keys = keys[0]
-        if g["success"].iloc[0] is False or pd.isna(g["mu_max"].iloc[0]):
+        if g.empty or g["success"].iloc[0] is False or pd.isna(g["mu_max"].iloc[0]):
             logging.info(f"Skipping plot for {keys}: fit was not successful")
         else:
             # Call the single-series plotting function

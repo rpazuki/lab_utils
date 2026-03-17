@@ -79,7 +79,6 @@ def test_read_bmg_export(test_data_path):
     assert set(df["well_row"]) == {"A", "B", "C"}
     assert set(df["well_col"]) == {1, 2}
 
-
     # Check final structure
     assert isinstance(df, pd.DataFrame)
     assert not df.empty
@@ -105,6 +104,66 @@ def test_read_bmg_export(test_data_path):
     # Check well formatting
     assert set(df["well_row"]) == {"A", "B", "C"}
     assert set(df["well_col"]) == {1, 2}
+
+
+def test_read_bmg_export_with_single_well_column(tmp_path):
+    """Test reading BMG export when well is provided as a single 'Well' column."""
+    raw_text = """Header line to skip
+Well,Content,Raw Data,,
+,,Time,0 h 0 min,0 h 30 min
+A1,SampleA,0.101,0.102,0.103
+B2,SampleB,0.201,0.202,0.203
+"""
+    raw_path = tmp_path / "rw_single_well.csv"
+    raw_path.write_text(raw_text, encoding="utf-8")
+
+    df = parse_raw_CLARIOstar_export(raw_path, value_column_name="od600")
+
+    assert not df.empty
+    assert set(df["well"]) == {"A1", "B2"}
+    assert set(df["well_row"]) == {"A", "B"}
+    assert set(df["well_col"]) == {1, 2}
+    assert "od600" in df.columns
+
+
+def test_read_bmg_export_with_raw_data_wavelength_split_well(tmp_path):
+    """Test reading BMG export when header uses 'Raw Data (600)' with split well columns."""
+    raw_text = """Some preamble
+Well Row,Well Col,Content,Raw Data (600),Raw Data (600)
+,,Time,0 h 0 min,0 h 15 min
+A,1,SampleA,0.111,0.112
+B,2,SampleB,0.211,0.212
+"""
+    raw_path = tmp_path / "rw_raw_data_600_split.csv"
+    raw_path.write_text(raw_text, encoding="utf-8")
+
+    df = parse_raw_CLARIOstar_export(raw_path, value_column_name="od600")
+
+    assert not df.empty
+    assert set(df["well"]) == {"A1", "B2"}
+    assert set(df["well_row"]) == {"A", "B"}
+    assert set(df["well_col"]) == {1, 2}
+    assert "od600" in df.columns
+
+
+def test_read_bmg_export_with_raw_data_wavelength_single_well(tmp_path):
+    """Test reading BMG export when header uses 'Raw Data (600)' with single well column."""
+    raw_text = """Some preamble
+Well,Content,Raw Data (600),Raw Data (600)
+,,Time,0 h 0 min,0 h 15 min
+A1,SampleA,0.101,0.102
+B2,SampleB,0.201,0.202
+"""
+    raw_path = tmp_path / "rw_raw_data_600_single.csv"
+    raw_path.write_text(raw_text, encoding="utf-8")
+
+    df = parse_raw_CLARIOstar_export(raw_path, value_column_name="od600")
+
+    assert not df.empty
+    assert set(df["well"]) == {"A1", "B2"}
+    assert set(df["well_row"]) == {"A", "B"}
+    assert set(df["well_col"]) == {1, 2}
+    assert "od600" in df.columns
 
 
 def test_read_meta_experiment(test_meta_path):
@@ -200,3 +259,41 @@ def test_report_function(test_data_path, test_meta_path):
     # Check formatting
     assert all(report_df["count"].astype(int) >= 0)
     assert all(report_df["issue"].astype(str).str.contains(r"^[a-z_]+$"))
+
+
+def test_parse_protocol_metadata_with_nonstandard_section_title(tmp_path):
+    """Test metadata parsing when section title is not exactly 'Experiment Data'."""
+    meta_text = """=== General Notes ===
+Some info here
+
+=== Plate Layout ===
+Well,Strain,Strain Well,Media Type,Supplements,Media Volume (µL)
+A1,SLAB1,A1,2x_M9,Glucose,230
+B2,Blank,B2,2x_M9,None,230
+"""
+    meta_path = tmp_path / "protocol_alt_section.csv"
+    meta_path.write_text(meta_text, encoding="utf-8")
+
+    df = parse_protocol_metadata(meta_path)
+
+    assert not df.empty
+    assert set(df["well"]) == {"A1", "B2"}
+    assert "strain" in df.columns
+    assert "is_blank" in df.columns
+
+
+def test_parse_protocol_metadata_plain_csv_without_sections(tmp_path):
+    """Test metadata parsing when file is plain CSV with no === section headers."""
+    meta_text = """Well,Strain,Strain Well,Media Type,Supplements,Media Volume (µL)
+A1,SLAB1,A1,2x_M9,Glucose,230
+B2,Blank,B2,2x_M9,None,230
+"""
+    meta_path = tmp_path / "protocol_plain.csv"
+    meta_path.write_text(meta_text, encoding="utf-8")
+
+    df = parse_protocol_metadata(meta_path)
+
+    assert not df.empty
+    assert set(df["well"]) == {"A1", "B2"}
+    assert "strain" in df.columns
+    assert "is_blank" in df.columns
