@@ -133,20 +133,24 @@ pipelines:
                 method: calculate_replicate_statistics_by_custom
                 parameters:
                     df_parsed: df_parsed # The 'df_parsed' that was created above
-                    strain_pattern: "[A-Za-z]+" # Example: "strainA1", "strainA2" -> grouped as "strainA"
+                    strain_pattern: '([A-Za-z0-9]+(?:_\d+)?)' # Extract base strain name: EGMB_61 from EGMB_61_R1
                     custom_rules:
                         EGMB:
+                            pattern: 'EGMB_\d+'  # Matches EGMB_61, EGMB_62, etc.
                             direction: alphabetical
-                            sample_size: 5 # e.g A1, A2, A3 - B1, B2, B3
+                            sample_size: 5      # 5 replicates (R1-R5) per base strain
                         MG:
+                            pattern: 'MG1655'   # Matches MG1655 (groups all MG wells)
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
-                        nan:
+                            sample_size: 5      # 5 MG wells total (MG1655_R56/57/64/65)
+
+                        MG2_relaxed:
+                            pattern: 'MG1655_r\d+'   # Matches MG1655 (groups all MG wells)
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
-                        BLANK:
+
+                        Blank (empty_well):     # Exact match for blank strain
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
+                            sample_size: 1      # No grouping for blanks
 
                     ddof: 0 # Biased std
                     value_column_name: od600 # The column name for OD values in df_parsed dataframe
@@ -336,19 +340,24 @@ pipelines:
                 method: calculate_replicate_statistics_by_custom
                 parameters:
                     df_parsed: df_combined_fit # The 'df_combined_fit' that was created above
+                    strain_pattern: '([A-Za-z0-9]+(?:_\d+)?)' # Extract base strain name: EGMB_61 from EGMB_61_R1
                     custom_rules:
                         EGMB:
+                            pattern: 'EGMB_\d+'  # Matches EGMB_61, EGMB_62, etc.
                             direction: alphabetical
-                            sample_size: 5 # e.g A1, A2, A3 - B1, B2, B3
+                            sample_size: 5      # 5 replicates (R1-R5) per base strain
                         MG:
+                            pattern: 'MG1655'   # Matches MG1655 (groups all MG wells)
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
-                        nan:
+                            sample_size: 5      # 5 MG wells total (MG1655_R56/57/64/65)
+
+                        MG2_relaxed:
+                            pattern: 'MG1655_r\d+'   # Matches MG1655 (groups all MG wells)
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
-                        BLANK:
+
+                        Blank (empty_well):     # Exact match for blank strain
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
+                            sample_size: 1      # No grouping for blanks
                     ddof: 0 # Biased std
                     value_column_name: mu_max # The column name for OD values in df_combined_fit dataframe
             - df_replicate_stats_mv:  # output dataframe name
@@ -356,19 +365,24 @@ pipelines:
                 method: calculate_replicate_statistics_by_custom
                 parameters:
                     df_parsed: df_combined_fit # The 'df_combined_fit' that was created above
+                    strain_pattern: '([A-Za-z0-9]+(?:_\d+)?)' # Extract base strain name: EGMB_61 from EGMB_61_R1
                     custom_rules:
                         EGMB:
+                            pattern: 'EGMB_\d+'  # Matches EGMB_61, EGMB_62, etc.
                             direction: alphabetical
-                            sample_size: 5 # e.g A1, A2, A3 - B1, B2, B3
+                            sample_size: 5      # 5 replicates (R1-R5) per base strain
                         MG:
+                            pattern: 'MG1655'   # Matches MG1655 (groups all MG wells)
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
-                        nan:
+                            sample_size: 5      # 5 MG wells total (MG1655_R56/57/64/65)
+
+                        MG2_relaxed:
+                            pattern: 'MG1655_r\d+'   # Matches MG1655 (groups all MG wells)
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
-                        BLANK:
+
+                        Blank (empty_well):     # Exact match for blank strain
                             direction: alphabetical
-                            sample_size: 1 # e.g A1 - B1
+                            sample_size: 1      # No grouping for blanks
                     ddof: 0 # Biased std
                     value_column_name: mv_mu_max # The column name for OD values in df_combined_fit dataframe
             - df_combined_fit_2:

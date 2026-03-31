@@ -12,6 +12,7 @@ import csv
 import re
 from io import StringIO
 from pathlib import Path
+from typing import TypedDict
 
 import pandas as pd
 
@@ -24,6 +25,14 @@ __all__ = [
     "calculate_replicate_statistics_by_well",
     "calculate_replicate_statistics_by_custom",
 ]
+
+
+class CustomReplicateRule(TypedDict, total=False):
+    """Rule definition for custom replicate statistics aggregation."""
+
+    direction: str
+    pattern: str
+    sample_size: int
 
 
 # ---------- helpers ----------
@@ -184,12 +193,21 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
 def split_sections(meta_text: str):
     """Split the custom metadata file into sections keyed by the === Title === line."""
     sections = {}
-    lines = [ln.strip() for ln in meta_text.splitlines() if ln.strip() != ""]
-    idxs = [i for i, ln in enumerate(lines) if ln.startswith("===") and ln.endswith("===")]
+
+    def _normalize_marker_line(line: str) -> str:
+        # Some exports add trailing commas after section headers.
+        return re.sub(r"\s*,+\s*$", "", line.strip())
+
+    def _is_section_marker(line: str) -> bool:
+        normalized = _normalize_marker_line(line)
+        return normalized.startswith("===") and normalized.endswith("===")
+
+    lines = [ln.strip() for ln in meta_text.splitlines() if ln.strip() != "" and not re.fullmatch(r"[\s,]+", ln)]
+    idxs = [i for i, ln in enumerate(lines) if _is_section_marker(ln)]
     idxs.append(len(lines))
     for s, e in zip(idxs, idxs[1:]):
-        title = lines[s].strip("= ").strip()
-        block = [ln for ln in lines[s + 1 : e] if not (ln.startswith("===") and ln.endswith("==="))]
+        title = _normalize_marker_line(lines[s]).strip("= ").strip()
+        block = [ln for ln in lines[s + 1 : e] if not _is_section_marker(ln)]
         sections[title] = "\n".join(block)
     return sections
 
@@ -201,8 +219,22 @@ def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
     df = None
 
     def _try_parse_csv_block(csv_text: str) -> pd.DataFrame | None:
+        cleaned_lines = []
+        for ln in csv_text.splitlines():
+            stripped = ln.strip()
+            if not stripped:
+                continue
+            if re.fullmatch(r"[\s,]+", stripped):
+                continue
+            marker_candidate = re.sub(r"\s*,+\s*$", "", stripped)
+            if marker_candidate.startswith("===") and marker_candidate.endswith("==="):
+                continue
+            cleaned_lines.append(stripped)
+        if not cleaned_lines:
+            return None
+
         try:
-            candidate = pd.read_csv(StringIO(csv_text))
+            candidate = pd.read_csv(StringIO("\n".join(cleaned_lines)))
         except Exception:
             return None
         candidate.columns = [str(c).strip() for c in candidate.columns]
@@ -250,6 +282,10 @@ def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
 
     if "Well" not in df.columns:
         raise ValueError('Experiment Data section is missing a "Well" column.')
+
+    # Guard against section labels or comma-only rows leaking into parsed data.
+    df["Well"] = df["Well"].astype(str).str.strip()
+    df = df[df["Well"].str.fullmatch(r"[A-Za-z]+\d+", na=False)].copy()
 
     vol_map = {
         "Media Volume (µL)": "media_volume_uL",
@@ -630,7 +666,7 @@ def calculate_replicate_statistics_by_well(
 def calculate_replicate_statistics_by_custom(
     df_parsed: pd.DataFrame,
     strain_pattern: str | None = r"[A-Za-z]+",
-    custom_rules: dict[str, dict[str, int | str]] | None = None,
+    custom_rules: dict[str, CustomReplicateRule] | None = None,
     ddof: int = 1,
     value_column_name: str = "od",
 ) -> pd.DataFrame:
@@ -639,6 +675,7 @@ def calculate_replicate_statistics_by_custom(
     This function combines strain-based grouping with custom direction and sample_size
     rules for each strain. It first extracts strain groups using a regex pattern, then
     applies specific aggregation rules (direction and sample_size) defined for each strain.
+    Rules can target specific strains by name or match multiple strains using a regex pattern.
 
     Parameters
     ----------
@@ -646,18 +683,43 @@ def calculate_replicate_statistics_by_custom(
         DataFrame returned by the `parse()` function, must contain columns:
         'well', 'well_row', 'well_col', 'strain', value column, and time-related columns
     strain_pattern : str | None, optional
-        Regex pattern to extract the grouping key from the 'strain' column.
+        Global regex pattern to extract the grouping key from the 'strain' column.
         Default is r"[A-Za-z]+" (extracts alphabetical part only).
         Example: "strainA1", "strainA2" -> grouped as "strainA"
         If None, uses strain values as-is without pattern extraction.
+        This global pattern is applied before rule-specific patterns.
     custom_rules : dict[str, dict[str, int | str]] | None, optional
-        Dictionary mapping strain names to their aggregation rules.
-        Each strain can have custom 'direction' and 'sample_size' settings.
-        Format: {
+        Dictionary mapping rule names to their aggregation rules.
+        Each rule can target specific strains by name or use a pattern to match multiple strains.
+        Each rule dictionary can contain:
+        - 'direction': "alphabetical"/"alpha" or "numerical"/"num" (required)
+        - 'sample_size': int >= 1 (optional for pattern rules)
+        - 'pattern': str, optional regex pattern to match strain names
+
+        Format (exact strain match):
+        {
             "strainA": {"direction": "alphabetical", "sample_size": 3},
             "strainB": {"direction": "numerical", "sample_size": 4}
         }
-        If a strain is not in custom_rules, it will be skipped.
+
+        Format (pattern-based matching):
+        {
+            "control_strains": {"pattern": r"control.*", "direction": "alphabetical", "sample_size": 3},
+            "experimental": {"pattern": r"st_\\d+_r\\d+", "direction": "numerical", "sample_size": 4}
+        }
+
+        Format (pattern-based matching without fixed sample_size):
+        {
+            "EGMB": {"pattern": r"EGMB_\\d+", "direction": "alphabetical"}
+        }
+
+        When 'pattern' is specified, all strains matching the regex pattern are processed
+        as separate groups when 'sample_size' is provided. When 'pattern' is specified
+        without 'sample_size', all matching strains are combined under the rule name and
+        grouped by the full row/column implied by 'direction', so replicate counts can vary
+        between groups. When 'pattern' is not specified, the rule name is treated as an
+        exact strain name match.
+        If a strain is not matched by any rule, it will be skipped.
         If None, an empty dict is used (no strains processed).
     ddof : int, optional
         Delta Degrees of Freedom for standard deviation calculation:
@@ -671,7 +733,7 @@ def calculate_replicate_statistics_by_custom(
     -------
     pd.DataFrame
         DataFrame with averaged statistics containing:
-        - strain_group: Identifier for the strain group
+        - strain: Identifier for the strain group
         - group_id: Identifier for the replicate group within strain (e.g., "A_1-3", "ABC_1")
         - wells: Comma-separated list of wells included in the group
         - well_rows: Comma-separated list of well rows in the group
@@ -686,12 +748,13 @@ def calculate_replicate_statistics_by_custom(
     ValueError
         - If required columns are missing from the DataFrame
         - If direction in custom_rules is invalid
-        - If sample_size in custom_rules is less than 1
+        - If sample_size in custom_rules is less than 1 when provided
         - If the number of wells for a strain is not divisible by its sample_size
+        - If pattern in custom_rules fails to compile as a regex
 
     Examples
     --------
-    >>> # Define custom rules for different strains
+    >>> # Define custom rules for specific strains by name
     >>> custom_rules = {
     ...     "strainA": {"direction": "alphabetical", "sample_size": 3},
     ...     "strainB": {"direction": "numerical", "sample_size": 4},
@@ -701,10 +764,14 @@ def calculate_replicate_statistics_by_custom(
     ...     df, strain_pattern=r"[A-Za-z]+", custom_rules=custom_rules
     ... )
 
-    >>> # Use full strain names without pattern extraction
+    >>> # Use pattern-based rules to match multiple strains
     >>> custom_rules = {
-    ...     "strain_A_rep1": {"direction": "alphabetical", "sample_size": 3},
-    ...     "strain_B_rep1": {"direction": "numerical", "sample_size": 3}
+    ...     "experimental_strains": {
+    ...         "pattern": r"st_\\d+_r\\d+",
+    ...         "direction": "alphabetical",
+    ...         "sample_size": 3
+    ...     },
+    ...     "control": {"direction": "numerical", "sample_size": 3}
     ... }
     >>> stats_df = calculate_replicate_statistics_by_custom(
     ...     df, strain_pattern=None, custom_rules=custom_rules
@@ -715,9 +782,11 @@ def calculate_replicate_statistics_by_custom(
     - Each strain group is processed independently with its own rules
     - For each strain, wells are grouped according to its direction and sample_size
     - Results from all strains are concatenated into a single DataFrame
-    - Only strains defined in custom_rules are processed
-    - The function internally calls logic similar to calculate_replicate_statistics_by_well
-      for each strain group
+    - Only strains matched by custom_rules are processed
+    - When using patterns with sample_size, each distinct matching strain is treated as a
+      separate group
+    - When using patterns without sample_size, all matching strains are combined under the
+      rule name and grouped by full rows or columns, depending on direction
     """
     # Validate input DataFrame
     required_cols = ["well", "well_row", "well_col", "strain", value_column_name]
@@ -725,33 +794,36 @@ def calculate_replicate_statistics_by_custom(
     if missing_cols:
         raise ValueError(f"DataFrame is missing required columns: {missing_cols}")
 
+    output_columns = [
+        "strain",
+        "group_id",
+        "wells",
+        "well_rows",
+        "well_cols",
+        f"{value_column_name}_mean",
+        f"{value_column_name}_std",
+        "n_replicates",
+    ]
+
     # Handle empty custom_rules
     if custom_rules is None:
         custom_rules = {}
 
     if not custom_rules:
         # Return empty DataFrame with expected columns
-        return pd.DataFrame(
-            columns=[
-                "strain_group",
-                "group_id",
-                "wells",
-                "well_rows",
-                "well_cols",
-                f"{value_column_name}_mean",
-                f"{value_column_name}_std",
-                "n_replicates",
-            ]
-        )
+        return pd.DataFrame(columns=output_columns)
 
     # Create a copy to avoid modifying the original
     df_with_groups = df_parsed.copy()
 
-    # Apply pattern extraction if specified
+    # Apply global pattern extraction if specified
     if strain_pattern is not None:
-        df_with_groups["strain_group"] = (
-            df_with_groups["strain"].astype(str).str.extract(f"({strain_pattern})", expand=False)
-        )
+        extracted = df_with_groups["strain"].astype(str).str.extract(f"({strain_pattern})", expand=True)
+        # Use the first captured group if there are multiple
+        if isinstance(extracted, pd.DataFrame):
+            df_with_groups["strain_group"] = extracted.iloc[:, 0]
+        else:
+            df_with_groups["strain_group"] = extracted
     else:
         df_with_groups["strain_group"] = df_with_groups["strain"]
 
@@ -760,31 +832,76 @@ def calculate_replicate_statistics_by_custom(
         col for col in ["time_label", "time_h", "time_min", "time_h_int", "time_min_int"] if col in df_parsed.columns
     ]
 
+    # Build a list of rule applications to process and track conflicts across rules.
+    unique_strains = [str(strain) for strain in df_with_groups["strain_group"].dropna().unique()]
+    assigned_strains: dict[str, str] = {}
+    rules_to_process: list[tuple[str, CustomReplicateRule, list[str], bool]] = []
+
+    for rule_key, rules in custom_rules.items():
+        pattern_str = rules.get("pattern")
+        use_full_direction_groups = pattern_str is not None and rules.get("sample_size") is None
+
+        # Check if this rule has a pattern
+        if pattern_str is not None:
+            if not isinstance(pattern_str, str):
+                raise ValueError(f"Pattern for rule '{rule_key}' must be a string, got {type(pattern_str).__name__}")
+
+            # Pattern-based rule: find all strains matching the pattern
+            try:
+                pattern = re.compile(pattern_str)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern in rule '{rule_key}': {pattern_str}. Error: {e}")
+
+            # Find all strain_groups matching this pattern
+            matching_strains = [strain for strain in unique_strains if pattern.search(strain)]
+
+            for strain in matching_strains:
+                if strain in assigned_strains:
+                    raise ValueError(
+                        f"Strain '{strain}' matches multiple patterns in custom_rules. "
+                        f"Please ensure each strain matches at most one pattern."
+                    )
+                assigned_strains[strain] = rule_key
+
+            if use_full_direction_groups:
+                rules_to_process.append((rule_key, rules, matching_strains, True))
+            else:
+                for strain in matching_strains:
+                    rules_to_process.append((strain, rules, [strain], False))
+        else:
+            # Exact name match: use rule_key as the strain name
+            if rule_key in assigned_strains:
+                raise ValueError(
+                    f"Strain '{rule_key}' matches multiple patterns in custom_rules. "
+                    f"Please ensure each strain matches at most one pattern."
+                )
+            assigned_strains[rule_key] = rule_key
+            rules_to_process.append((rule_key, rules, [rule_key], False))
+
     # Process each strain according to its custom rules
     all_results = []
 
-    for strain_name, rules in custom_rules.items():
-        # Filter data for this strain
-        strain_df = df_with_groups[df_with_groups["strain_group"] == strain_name].copy()
+    for output_strain, rules, strain_names, use_full_direction_groups in rules_to_process:
+        # Filter data for this rule application
+        strain_df = df_with_groups[df_with_groups["strain_group"].isin(strain_names)].copy()
 
         if len(strain_df) == 0:
             continue  # Skip if no data for this strain
 
         # Extract rules
-        direction = rules.get("direction", "alphabetical")
-        sample_size = rules.get("sample_size", 3)
-
-        # Validate direction
-        direction = direction.lower()  # type: ignore
-        if direction not in ["alphabetical", "alpha", "numerical", "num"]:
+        direction_raw = rules.get("direction", "alphabetical")
+        if not isinstance(direction_raw, str):
             raise ValueError(
-                f"Invalid direction '{direction}' for strain '{strain_name}'. "
-                f"Must be 'alphabetical'/'alpha' or 'numerical'/'num'"
+                f"Direction for rule '{output_strain}' must be a string, got {type(direction_raw).__name__}"
             )
 
-        # Validate sample_size
-        if sample_size < 1:  # type: ignore
-            raise ValueError(f"sample_size must be at least 1 for strain '{strain_name}', got {sample_size}")
+        # Validate direction
+        direction = direction_raw.lower()
+        if direction not in ["alphabetical", "alpha", "numerical", "num"]:
+            raise ValueError(
+                f"Invalid direction '{direction}' for strain '{output_strain}'. "
+                f"Must be 'alphabetical'/'alpha' or 'numerical'/'num'"
+            )
 
         # Determine grouping direction
         is_alphabetical = direction in ["alphabetical", "alpha"]
@@ -797,21 +914,35 @@ def calculate_replicate_statistics_by_custom(
             unique_wells = unique_wells.sort_values(["well_row", "well_col"]).reset_index(drop=True)
             n_positions = len(unique_wells["well_row"].unique())
             position_name = "rows"
+            grouping_col = "well_row"
         else:
             # Sort by column then row (A1, B1, C1, ..., A2, B2, C2, ...)
             unique_wells = unique_wells.sort_values(["well_col", "well_row"]).reset_index(drop=True)
             n_positions = len(unique_wells["well_col"].unique())
             position_name = "columns"
+            grouping_col = "well_col"
 
-        # Check if divisible by sample_size
-        if len(unique_wells) % sample_size != 0:  # type: ignore
-            raise ValueError(
-                f"Strain '{strain_name}': Number of wells ({len(unique_wells)}) is not divisible by "
-                f"sample_size ({sample_size}). Total {position_name}: {n_positions}"
-            )
+        if use_full_direction_groups:
+            # Group full rows/columns so replicate counts can vary across positions.
+            unique_wells["group_num"] = pd.factorize(unique_wells[grouping_col], sort=False)[0]
+        else:
+            sample_size = rules.get("sample_size", 3)
+            if not isinstance(sample_size, int):
+                raise ValueError(
+                    f"sample_size must be an integer for strain '{output_strain}', got {type(sample_size).__name__}"
+                )
+            if sample_size < 1:
+                raise ValueError(f"sample_size must be at least 1 for strain '{output_strain}', got {sample_size}")
 
-        # Create group assignments
-        unique_wells["group_num"] = unique_wells.index // sample_size  # type: ignore
+            # Check if divisible by sample_size
+            if len(unique_wells) % sample_size != 0:
+                raise ValueError(
+                    f"Strain '{output_strain}': Number of wells ({len(unique_wells)}) is not divisible by "
+                    f"sample_size ({sample_size}). Total {position_name}: {n_positions}"
+                )
+
+            # Create fixed-size group assignments
+            unique_wells["group_num"] = unique_wells.index // sample_size
 
         # Merge group assignments back to strain dataframe
         strain_df = strain_df.merge(unique_wells[["well", "group_num"]], on="well", how="left")
@@ -829,7 +960,6 @@ def calculate_replicate_statistics_by_custom(
             "well": [("wells", lambda x: ",".join(sorted(set(x))))],
             "well_row": [("well_rows", lambda x: ",".join(sorted(set(x))))],
             "well_col": [("well_cols", lambda x: ",".join(sorted(set(map(str, x)))))],
-            "strain_group": "first",
         }
 
         # Include metadata columns from first well in each group
@@ -852,8 +982,6 @@ def calculate_replicate_statistics_by_custom(
                     new_cols.append(col[1])  # Use the renamed name directly (e.g., od_mean, od_std)
                 elif col[0] in ["well", "well_row", "well_col"]:
                     new_cols.append(col[1])  # Use the renamed names (wells, well_rows, well_cols)
-                elif col[0] == "strain_group":
-                    new_cols.append("strain_group")  # Keep strain_group as is
                 else:
                     new_cols.append(col[0] if not col[1] else f"{col[0]}_{col[1]}")
             else:
@@ -862,6 +990,7 @@ def calculate_replicate_statistics_by_custom(
 
         # Rename count column
         stats_df = stats_df.rename(columns={"count": "n_replicates"})
+        stats_df["strain"] = output_strain
 
         # Create group_id column
         def create_group_id(row):
@@ -890,24 +1019,13 @@ def calculate_replicate_statistics_by_custom(
     # Concatenate all results
     if not all_results:
         # Return empty DataFrame with expected columns
-        return pd.DataFrame(
-            columns=[
-                "strain_group",
-                "group_id",
-                "wells",
-                "well_rows",
-                "well_cols",
-                f"{value_column_name}_mean",
-                f"{value_column_name}_std",
-                "n_replicates",
-            ]
-        )
+        return pd.DataFrame(columns=output_columns)
 
     final_df = pd.concat(all_results, ignore_index=True)
 
     # Reorder columns for better readability
     first_cols = [
-        "strain_group",
+        "strain",
         "group_id",
         "wells",
         "well_rows",
@@ -920,8 +1038,8 @@ def calculate_replicate_statistics_by_custom(
     other_cols = [col for col in final_df.columns if col not in first_cols]
     final_df = final_df[first_cols + other_cols]
 
-    # Sort by strain_group, group_id and time columns
-    sort_cols = ["strain_group", "group_id"]
+    # Sort by strain, group_id and time columns
+    sort_cols = ["strain", "group_id"]
     for time_col in ["time_min", "time_h", "time_label"]:
         if time_col in final_df.columns:
             sort_cols.append(time_col)
@@ -933,7 +1051,5 @@ def calculate_replicate_statistics_by_custom(
     first_suffix_cols = [col for col in final_df.columns if col.endswith("_first")]
     for first_col in first_suffix_cols:
         final_df = final_df.rename(columns={first_col: first_col[:-6]})  # Remove '_first' suffix
-
-    final_df = final_df.rename(columns={"strain_group": "strain"})
 
     return final_df

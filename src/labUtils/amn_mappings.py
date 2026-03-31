@@ -382,7 +382,7 @@ def build_mappings(
         try:
             import yaml
 
-            yaml_path = Path(custom_mapping_file)
+            yaml_path = Path(__file__).parent / "yamls" / custom_mapping_file
             if yaml_path.exists():
                 with open(yaml_path, encoding="utf-8") as f:
                     yaml_data = yaml.safe_load(f)
