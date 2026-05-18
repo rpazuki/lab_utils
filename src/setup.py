@@ -8,5 +8,6 @@ setup(
        'numpy',
        'pandas',
        'scipy',
+       'addict',
    ],
 )
