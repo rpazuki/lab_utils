@@ -1,114 +1,67 @@
-"""Test script for SBML bounds parsing"""
+"""SBML bounds parsing tests for the current API."""
 
-import os
-import tempfile
+from pathlib import Path
 
 import pandas as pd
 
-from labUtils.amn_mappings import (create_exchange_bounds_template,
-                                   create_supplement_exchange_matrix,
-                                   load_default_iml1515_mapping,
-                                   parse_sbml_exchange_bounds)
+from labUtils.amn_mappings import (
+    _parse_sbml_exchange_bounds_fallback,
+    build_AMN_levels_dataframe,
+    build_mappings,
+)
 
-# Check if iML1515 model exists
-model_path = os.path.join(tempfile.gettempdir(), 'iML1515.xml')
 
-print("="*70)
-print("Testing SBML Exchange Bounds Parsing")
-print("="*70)
-
-if os.path.exists(model_path):
-    print(f"\n1. Parsing bounds from {model_path}...")
-    bounds = parse_sbml_exchange_bounds(model_path)
-    print(f"   Found {len(bounds)} exchange reactions with bounds")
-
-    print("\n2. Sample bounds (first 10):")
-    for i, (rxn, (level, max_val)) in enumerate(list(bounds.items())[:10]):
-        print(f"   {rxn:20s} -> level={level}, max_value={max_val}")
-
-    # Create test data
-    print("\n3. Creating exchange matrix...")
-    df = pd.DataFrame({
-        'well': ['A1', 'A2', 'A3'],
-        'supplements': ['Glucose', 'Fructose', 'Ribose'],
-        'mu_max': [0.2, 0.15, 0.18],
-        'success': [True, True, True]
-    })
-
-    mapping = load_default_iml1515_mapping()
-    matrix = create_supplement_exchange_matrix(df, mapping)
-    print(f"   Matrix shape: {matrix.shape}")
-    print(matrix)
-
-    print("\n4. Creating bounds template with SBML bounds...")
-    template = create_exchange_bounds_template(matrix, sbml_bounds=bounds)
-    print(template)
-
-    print("\n5. Testing precedence: SBML bounds + custom override...")
-    custom = {'EX_glc__D_e': (10, 100)}
-    template_custom = create_exchange_bounds_template(
-        matrix,
-        sbml_bounds=bounds,
-        custom_bounds=custom
+def test_parse_sbml_exchange_bounds_fallback_reads_upper_bounds(tmp_path):
+    sbml_path = Path(tmp_path) / "toy_model.xml"
+    sbml_path.write_text(
+        """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<sbml xmlns=\"http://www.sbml.org/sbml/level3/version1/core\">
+  <model>
+    <listOfReactions>
+      <reaction id=\"EX_glc__D_e\" name=\"glucose exchange\">
+        <kineticLaw>
+          <listOfParameters>
+            <parameter id=\"UPPER_BOUND\" value=\"25\"/>
+          </listOfParameters>
+        </kineticLaw>
+      </reaction>
+      <reaction id=\"EX_o2_e_i\" name=\"oxygen exchange\"/>
+      <reaction id=\"R_NOT_EX\" name=\"internal reaction\"/>
+    </listOfReactions>
+  </model>
+</sbml>
+""",
+        encoding="utf-8",
     )
-    print(template_custom)
 
-    print("\n" + "="*70)
-    print("SUCCESS: All tests passed!")
-    print("="*70)
+    bounds = _parse_sbml_exchange_bounds_fallback(sbml_path, default_level=2)
 
-else:
-    print(f"\niML1515.xml not found at {model_path}")
-    print("Testing with mock bounds instead...")
+    assert bounds["EX_glc__D_e"] == (2, 25)
+    assert bounds["EX_o2_e_i"] == (2, 1000)
+    assert "R_NOT_EX" not in bounds
 
-    # Create mock SBML bounds
-    mock_bounds = {
-        'EX_glc__D_e': (1, 10),
-        'EX_fru_e_i': (1, 20),
-        'EX_rib__D_e_i': (1, 30)
-    }
 
-    # Create test data
-    df = pd.DataFrame({
-        'well': ['A1', 'A2', 'A3'],
-        'supplements': ['Glucose', 'Fructose', 'Ribose'],
-        'mu_max': [0.2, 0.15, 0.18],
-        'success': [True, True, True]
-    })
-
-    mapping = load_default_iml1515_mapping()
-    matrix = create_supplement_exchange_matrix(df, mapping)
-
-    print("\nExchange Matrix:")
-    print(matrix)
-
-    print("\n1. Bounds with mock SBML bounds:")
-    template1 = create_exchange_bounds_template(matrix, sbml_bounds=mock_bounds)
-    print(template1)
-
-    print("\n2. Precedence test: SBML + custom:")
-    custom = {'EX_glc__D_e': (5, 50)}
-    template2 = create_exchange_bounds_template(
-        matrix,
-        sbml_bounds=mock_bounds,
-        custom_bounds=custom
+def test_build_amn_levels_custom_bounds_override_mapping_values():
+    growth_df = pd.DataFrame(
+        {
+            "well": ["A1"],
+            "supplements": ["Glucose"],
+            "mu_max": [0.2],
+        }
     )
-    print(template2)
-
-    print("\n3. Precedence test: defaults + SBML + custom:")
-    template3 = create_exchange_bounds_template(
-        matrix,
-        default_level=2,
-        default_max_value=999,
-        sbml_bounds={'EX_fru_e_i': (3, 300)},
-        custom_bounds={'EX_glc__D_e': (10, 100)}
+    mappings_df = build_mappings(
+        growth_df,
+        supplement_to_exchange_map={"glucose": "EX_glc__D_e"},
     )
-    print(template3)
-    print("\nExpected precedence:")
-    print("  EX_glc__D_e:    custom (10, 100)")
-    print("  EX_fru_e_i:     SBML (3, 300)")
-    print("  EX_rib__D_e_i:  defaults (2, 999)")
+    exchange_matrix = pd.DataFrame({"EX_glc__D_e": [1], "mu_max": [0.2]})
+    flux_df = pd.DataFrame({"EX_glc__D_e": [5.0], "mu_max": [0.2]})
 
-    print("\n" + "="*70)
-    print("SUCCESS: Mock tests passed!")
-    print("="*70)
+    levels_df = build_AMN_levels_dataframe(
+        exchange_matrix,
+        mappings_df,
+        flux_df,
+        custom_bounds={"EX_glc__D_e": (9, 90)},
+    ).set_index("name")
+
+    assert levels_df.at["level", "EX_glc__D_e"] == 9
+    assert levels_df.at["max_value", "EX_glc__D_e"] == 90

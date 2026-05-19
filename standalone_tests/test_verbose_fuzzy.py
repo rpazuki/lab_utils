@@ -1,33 +1,30 @@
-"""Test verbose mapping with fuzzy matches"""
+"""Fuzzy-match tests for the current mapping API."""
 
 import pandas as pd
 
-from labUtils.amn_mappings import (create_supplement_exchange_matrix,
-                                   load_default_iml1515_mapping)
+from labUtils.amn_mappings import build_mappings, load_default_iml1515_mapping
 
-# Create sample data with some typos/variations
-df = pd.DataFrame({
-    'well': ['A1', 'A2', 'A3'],
-    'supplements': ['Glucose', 'Glu; Adenin', 'Unknown_Chemical; Riboze'],
-    'mu_max': [0.2, 0.15, 0.18],
-    'success': [True, True, True]
-})
 
-# Get mapping
-mapping = load_default_iml1515_mapping()
+def test_build_mappings_fuzzy_match_updates_aliases():
+    growth_df = pd.DataFrame(
+        {
+            "well": ["A1"],
+            "supplements": ["Glucoze; Adenin"],
+            "mu_max": [0.2],
+        }
+    )
 
-print("Testing verbose=True with fuzzy matching:")
-print("-" * 70)
+    mappings_df = build_mappings(
+        growth_df,
+        supplement_to_exchange_map=load_default_iml1515_mapping(),
+        fuzzy_threshold=0.6,
+        verbose=True,
+    )
 
-# Create matrix with verbose output
-matrix = create_supplement_exchange_matrix(
-    df,
-    supplement_to_exchange_map=mapping,
-    supplement_column='supplements',
-    growth_rate_column='mu_max',
-    fuzzy_threshold=0.6,
-    verbose=True
-)
+    glucose_row = mappings_df.loc[mappings_df["exchange_reaction"] == "EX_glc__D_e"].iloc[0]
+    adenine_row = mappings_df.loc[mappings_df["exchange_reaction"] == "EX_ade_e"].iloc[0]
 
-print("\nResulting matrix:")
-print(matrix)
+    assert glucose_row["source"] == "supplement"
+    assert "glucoze" in glucose_row["other_names"]
+    assert adenine_row["source"] == "supplement"
+    assert "adenin" in adenine_row["other_names"]

@@ -3,14 +3,9 @@ from pathlib import Path
 
 from labUtils.utils import build_pipeline_from_yaml
 
-# Build the pipeline from YAML
-yaml_path = Path("src/labUtils/pipeline_temp.yaml")
-pipeline, _ = build_pipeline_from_yaml(yaml_path, "pipeline_1")
 
-# Execute the pipeline
-result = pipeline()
+def test_pipeline_yaml_builds_pipeline():
+    yaml_path = Path(__file__).with_name("pipeline_temp.yaml")
+    pipeline, _ = build_pipeline_from_yaml(yaml_path, "pipeline_1")
 
-print(f"Pipeline created successfully with {len(pipeline.processes)} processes")
-print("Process types:")
-for i, proc in enumerate(pipeline.processes):
-    print(f"  {i+1}. {type(proc).__name__}")
+    assert len(pipeline.processes) > 0

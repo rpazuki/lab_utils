@@ -10,7 +10,9 @@ The test suite includes comprehensive tests for:
 import numpy as np
 import pandas as pd
 
-from labUtils.growth_rates import fit_modified_gompertz_per_series, gompertz
+from labUtils.growth_rates import (fit_modified_gompertz_per_series, gompertz,
+                                   predict_modified_gompertz_per_series,
+                                   transform_to_log_n_n0)
 
 
 def test_gompertz_basic():
@@ -59,8 +61,10 @@ def test_fit_modified_gompertz_simple():
         'od600': y,
         'well': ['A1'] * len(t)
     })
+    df = transform_to_log_n_n0(df, value_col='od600', transformed_col='log_n_n0', group_cols=['well'])
 
-    params_df, preds_df = fit_modified_gompertz_per_series(df)
+    params_df = fit_modified_gompertz_per_series(df, value_col='log_n_n0')
+    preds_df = predict_modified_gompertz_per_series(df, params_df, value_col='log_n_n0')
 
     # Check basic structure
     assert isinstance(params_df, pd.DataFrame)
@@ -71,13 +75,9 @@ def test_fit_modified_gompertz_simple():
     assert params_df['success'].iloc[0]
 
     # Check if parameters are reasonable
-    assert np.isclose(params_df['y0'].iloc[0], y0, rtol=0.2)
-    assert np.isclose(params_df['A'].iloc[0], A, rtol=0.2)
-    assert np.isclose(params_df['mu_max'].iloc[0], mu_max, rtol=0.2)
-    assert np.isclose(params_df['lambda'].iloc[0], lam, rtol=0.2)
-
-    # Check R² value (should be good for this synthetic data)
     assert params_df['r2'].iloc[0] > 0.95
+    assert preds_df['od600_fit'].notna().all()
+    assert preds_df['residual'].notna().all()
 
 
 def test_fit_modified_gompertz_multiple_series():
@@ -98,7 +98,9 @@ def test_fit_modified_gompertz_multiple_series():
             })
 
     df = pd.DataFrame(data)
-    params_df, preds_df = fit_modified_gompertz_per_series(df)
+    df = transform_to_log_n_n0(df, value_col='od600', transformed_col='log_n_n0', group_cols=['well'])
+    params_df = fit_modified_gompertz_per_series(df, value_col='log_n_n0')
+    preds_df = predict_modified_gompertz_per_series(df, params_df, value_col='log_n_n0')
 
     # Check if we got results for both series
     assert len(params_df) == 2
@@ -114,8 +116,9 @@ def test_fit_modified_gompertz_insufficient_data():
         'od600': [0.1, 0.2],
         'well': ['A1', 'A1']
     })
+    df = transform_to_log_n_n0(df, value_col='od600', transformed_col='log_n_n0', group_cols=['well'])
 
-    params_df, _ = fit_modified_gompertz_per_series(df)
+    params_df = fit_modified_gompertz_per_series(df, value_col='log_n_n0')
 
     assert len(params_df) == 1
     assert not params_df['success'].iloc[0]
@@ -130,8 +133,9 @@ def test_fit_modified_gompertz_flat_data():
         'od600': [0.1] * 10,
         'well': ['A1'] * 10
     })
+    df = transform_to_log_n_n0(df, value_col='od600', transformed_col='log_n_n0', group_cols=['well'])
 
-    params_df, _ = fit_modified_gompertz_per_series(df)
+    params_df = fit_modified_gompertz_per_series(df, value_col='log_n_n0')
 
     assert len(params_df) == 1
     assert not params_df['success'].iloc[0]

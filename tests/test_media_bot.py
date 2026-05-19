@@ -71,7 +71,7 @@ def test_parse_time_label():
 def test_read_bmg_export(test_data_path):
     """Test reading BMG export file"""
     # Test parse_raw_bmg_export
-    df = parse_raw_CLARIOstar_export(test_data_path)
+    df = parse_raw_CLARIOstar_export(test_data_path, value_column_name="od600")
 
     # Check basic structure of raw data
     assert isinstance(df, pd.DataFrame)
@@ -92,7 +92,7 @@ def test_read_bmg_export(test_data_path):
         assert col in df.columns
 
     # Check data types
-    assert df["well_row"].dtype == "object"  # string
+    assert pd.api.types.is_string_dtype(df["well_row"])  # string-like dtype
     assert df["well_col"].dtype == "Int64"
     assert df["od600"].dtype == "float64"
 
@@ -197,11 +197,11 @@ def test_read_meta_experiment(test_meta_path):
 def test_parse_integration(test_data_path, test_meta_path):
     """Test full integration of parsing both data and metadata"""
     # First read and process the raw data
-    raw_long = parse_raw_CLARIOstar_export(test_data_path)
+    raw_long = parse_raw_CLARIOstar_export(test_data_path, value_column_name="od600")
     meta = parse_protocol_metadata(test_meta_path)
 
     # Then parse them together
-    df = parse(raw_long, meta)
+    df = parse(raw_long, meta, value_column_name="od600")
 
     # Check basic structure
     assert isinstance(df, pd.DataFrame)
@@ -227,11 +227,11 @@ def test_parse_integration(test_data_path, test_meta_path):
 def test_report_function(test_data_path, test_meta_path):
     """Test the report function for data validation"""
     # First read and process the raw data
-    raw_long = parse_raw_CLARIOstar_export(test_data_path)
+    raw_long = parse_raw_CLARIOstar_export(test_data_path, value_column_name="od600")
     meta = parse_protocol_metadata(test_meta_path)
 
     # Generate report for complete data
-    report_df = report(raw_long, meta)
+    report_df = report(raw_long, meta, value_column_name="od600")
 
     # Check basic structure
     assert isinstance(report_df, pd.DataFrame)
@@ -243,7 +243,7 @@ def test_report_function(test_data_path, test_meta_path):
     reduced_meta = meta[~meta["well"].isin(["A2", "B2", "C2"])].copy()
 
     # Now test with incomplete metadata
-    report_df = report(raw_long, reduced_meta)
+    report_df = report(raw_long, reduced_meta, value_column_name="od600")
 
     # Check that issues are reported correctly
     assert isinstance(report_df, pd.DataFrame)

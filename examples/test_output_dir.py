@@ -3,19 +3,11 @@ from pathlib import Path
 
 from labUtils.utils import build_pipeline_from_yaml
 
-# Test without output_dir
-yaml_path = Path("tests/pipeline_temp.yaml")
-pipeline1, _ = build_pipeline_from_yaml(yaml_path, "pipeline_1")
-print("Without output_dir:")
-print(f"  Pipeline has {len(pipeline1.processes)} processes")
 
-# Test with output_dir
-output_dir = Path("./my_results")
-pipeline2, _ = build_pipeline_from_yaml(yaml_path, "pipeline_1", output_dir)
-print(f"\nWith output_dir={output_dir}:")
-print(f"  Pipeline has {len(pipeline2.processes)} processes")
-print(f"  Output files will be saved to: {output_dir.absolute()}")
+def test_output_dir_pipeline_yaml_loads():
+	yaml_path = Path(__file__).with_name("pipeline_temp.yaml")
+	pipeline1, _ = build_pipeline_from_yaml(yaml_path, "pipeline_1")
+	pipeline2, _ = build_pipeline_from_yaml(yaml_path, "pipeline_1", Path("./my_results"))
 
-# The OutputProcess (last process) should have the combined paths
-# This can be verified by looking at the closure variables
-print("\nPipeline structure verified!")
+	assert len(pipeline1.processes) > 0
+	assert len(pipeline2.processes) == len(pipeline1.processes)
