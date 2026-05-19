@@ -1,4 +1,10 @@
+from __future__ import annotations
+
+from os import PathLike
+from typing import Any, Sequence
+
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 try:
     from statsmodels.regression.linear_model import yule_walker
@@ -6,21 +12,30 @@ except ImportError:  # pragma: no cover - exercised only when optional dep missi
     yule_walker = None
 
 
-def spectral_density_zero(x, order=None):
-    """
-    Estimate the spectral density at frequency zero for a 1-D time series.
+FloatArray = NDArray[np.float64]
+IntArray = NDArray[np.int_]
 
-    Fits an AR(p) model using the Yule-Walker equations and returns:
-        S(0) = σ² / (1 − φ₁ − φ₂ − ⋯ − φ_p)²
+
+def spectral_density_zero(x: ArrayLike, order: int | None = None) -> float:
+    """Estimate the zero-frequency spectral density for a one-dimensional series.
+
+    Fits an AR(p) model with the Yule-Walker equations and returns the
+    zero-frequency estimate ``S(0) = sigma^2 / (1 - phi_1 - ... - phi_p)^2``.
+    When the series is too short, the autoregressive fit is unstable, or
+    ``statsmodels`` is unavailable, this falls back to the sample variance.
 
     Parameters
     ----------
-    x     : array-like, 1-D time series (typically a chain window)
-    order : int or None; if None uses floor(log(n)) as rule-of-thumb
+    x : ArrayLike
+        One-dimensional time series, typically a window from an MCMC chain.
+    order : int | None, default=None
+        Autoregressive order. If omitted, uses ``round(log(n))`` with a minimum
+        value of 1.
 
     Returns
     -------
-    float : estimated spectral density at zero frequency
+    float
+        Estimated spectral density at zero frequency.
     """
     x = np.asarray(x, dtype=float)
     x = x - x.mean()                              # demean
@@ -41,26 +56,35 @@ def spectral_density_zero(x, order=None):
         return float(np.var(x, ddof=1))           # fallback to sample variance
 
 
-def geweke_zscore(x, first=0.1, last=0.5):
-    """
-    Compute a single Geweke Z-score for a 1-D MCMC chain.
+def geweke_zscore(x: ArrayLike, first: float = 0.1, last: float = 0.5) -> float:
+    """Compute a Geweke Z-score for a one-dimensional MCMC chain.
 
-    Compares the mean of the first `first` fraction (window A) with the mean
-    of the last `last` fraction (window B). Standard errors are estimated
+    Compares the mean of the first ``first`` fraction of the chain with the mean
+    of the last ``last`` fraction. Standard errors are estimated
     from the spectral density at zero to correct for autocorrelation.
 
-    H₀: E[θ]_A = E[θ]_B  (chain has reached stationarity)
-    Reject H₀ if |Z| > 1.96  (α = 0.05)
+    Under stationarity, the two windows should have matching expectations.
+    Values with absolute magnitude above roughly 1.96 are commonly treated as
+    evidence against convergence at the 5% level.
 
     Parameters
     ----------
-    x     : array-like, MCMC chain of length N
-    first : float ∈ (0, 1), default 0.1 — fraction used for window A
-    last  : float ∈ (0, 1), default 0.5 — fraction used for window B
+    x : ArrayLike
+        One-dimensional Markov chain sample.
+    first : float, default=0.1
+        Fraction of the chain used for the leading window.
+    last : float, default=0.5
+        Fraction of the chain used for the trailing window.
 
     Returns
     -------
-    z : float
+    float
+        Geweke Z-score comparing the two windows.
+
+    Raises
+    ------
+    ValueError
+        If ``first + last >= 1.0`` because the windows would overlap.
     """
     x = np.asarray(x, dtype=float)
     if first + last >= 1.0:
@@ -84,24 +108,32 @@ def geweke_zscore(x, first=0.1, last=0.5):
     return float((mean_A - mean_B) / se)
 
 
-def geweke_sweep(x, first=0.1, last=0.5, intervals=20):
-    """
-    Multi-interval Geweke sweep.
+def geweke_sweep(
+    x: ArrayLike,
+    first: float = 0.1,
+    last: float = 0.5,
+    intervals: int = 20,
+) -> tuple[IntArray, FloatArray]:
+    """Run the Geweke diagnostic over multiple starting positions.
 
-    Repeats the Geweke test at `intervals` evenly-spaced starting positions
-    from 0 to floor((1 − last) × N). Returns arrays suitable for plotting.
+    Repeats the Geweke test at ``intervals`` evenly spaced starting positions
+    from 0 to ``floor((1 - last) * N)`` and returns arrays suitable for plotting.
 
     Parameters
     ----------
-    x         : array-like, full MCMC chain
-    first     : float, fraction for window A (default 0.1)
-    last      : float, fraction for window B (default 0.5)
-    intervals : int, number of starting positions (default 20)
+    x : ArrayLike
+        Full one-dimensional MCMC chain.
+    first : float, default=0.1
+        Fraction for the leading comparison window.
+    last : float, default=0.5
+        Fraction for the trailing comparison window.
+    intervals : int, default=20
+        Number of starting positions evaluated across the chain.
 
     Returns
     -------
-    starts  : ndarray, start indices
-    zscores : ndarray, corresponding Z-scores
+    tuple[IntArray, FloatArray]
+        Start indices and corresponding Z-scores.
     """
     x = np.asarray(x, dtype=float)
     n = len(x)
@@ -114,38 +146,43 @@ def geweke_sweep(x, first=0.1, last=0.5, intervals=20):
 
 
 def plot_geweke_sweeps(
-    sweeps,
-    labels=None,
-    colors=None,
-    title="Geweke Convergence Diagnostic - Multi-Interval Sweep",
-    figsize_per_plot=(6, 4),
-    save_path=None,
-    show=True,
-):
-    """
-    Plot one or more Geweke sweep results.
+    sweeps: Sequence[tuple[ArrayLike, ArrayLike]],
+    labels: Sequence[str] | None = None,
+    colors: Sequence[Any | None] | None = None,
+    title: str = "Geweke Convergence Diagnostic - Multi-Interval Sweep",
+    figsize_per_plot: tuple[float, float] = (6, 4),
+    save_path: str | PathLike[str] | None = None,
+    show: bool = True,
+) -> tuple[Any, NDArray[Any]]:
+    """Plot one or more Geweke sweep results.
 
     Parameters
     ----------
-    sweeps : sequence of tuple(ndarray, ndarray)
-        Each element must be ``(starts, zscores)`` as returned by ``geweke_sweep``.
-    labels : sequence of str or None
+    sweeps : Sequence[tuple[ArrayLike, ArrayLike]]
+        Sequence of ``(starts, zscores)`` pairs as returned by ``geweke_sweep``.
+    labels : Sequence[str] | None, default=None
         Optional subplot titles for each sweep.
-    colors : sequence of matplotlib-compatible color or None
-        Optional scatter color per sweep.
+    colors : Sequence[Any | None] | None, default=None
+        Optional matplotlib-compatible color for each sweep.
     title : str
         Figure-level title.
-    figsize_per_plot : tuple(float, float)
+    figsize_per_plot : tuple[float, float], default=(6, 4)
         Per-subplot width and height in inches.
-    save_path : str or None
-        If provided, saves the figure to this path.
-    show : bool
+    save_path : str | PathLike[str] | None, default=None
+        If provided, save the figure to this path.
+    show : bool, default=True
         Whether to call ``plt.show()``.
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
-    axes : ndarray of matplotlib.axes.Axes
+    tuple[Any, NDArray[Any]]
+        The matplotlib figure and array of axes.
+
+    Raises
+    ------
+    ValueError
+        If no sweeps are provided or if ``labels`` or ``colors`` lengths do not
+        match the number of sweeps.
     """
     import matplotlib.pyplot as plt
 
