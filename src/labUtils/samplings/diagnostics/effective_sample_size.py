@@ -92,15 +92,14 @@ def ess_from_chain(x: np.ndarray) -> float:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def plot_ess_diagnostics(
-    chains: dict[str, np.ndarray],
-    labels: dict[str, str] | None = None,
-    colors: dict[str, str] | None = None,
+    chains: dict[str, np.ndarray] | list[np.ndarray],
+    labels: dict[str, str] | list[str] | None = None,
+    colors: dict[str, str] | list[str] | None = None,
     max_trace_draws: int = 500,
     max_acf_lags: int = 200,
     figsize: tuple[int, int] = (15, 8),
     output_file: str | None = None,
     show_plot: bool = True,
-    show_trace_zero_line: bool = False,
 ) -> plt.Figure:
     """
     Plot trace plots and autocorrelation functions for MCMC chains.
@@ -110,15 +109,15 @@ def plot_ess_diagnostics(
 
     Parameters
     ----------
-    chains : dict[str, np.ndarray]
-        Dictionary mapping chain identifiers to 1-D chain arrays.
-        Example: {"iid": chain1, "good": chain2, "slow": chain3}
-    labels : dict[str, str] | None
-        Optional dictionary mapping chain identifiers to display labels.
-        If None, uses chain identifiers as labels.
-    colors : dict[str, str] | None
-        Optional dictionary mapping chain identifiers to matplotlib colors.
-        If None, uses default color palette.
+    chains : dict[str, np.ndarray] | list[np.ndarray]
+        Either a dictionary mapping chain IDs to 1-D arrays, or a list of 1-D arrays.
+        Example: {"chain_a": data1, "chain_b": data2} or [data1, data2]
+    labels : dict[str, str] | list[str] | None, optional
+        Display labels for each chain. If None, creates labels as "chain1", "chain2", etc.
+        If dict, maps chain IDs to labels. If list, must match chain order (default: None)
+    colors : dict[str, str] | list[str] | None, optional
+        Colors for each chain. If None, uses default palette.
+        If dict, maps chain IDs to colors. If list, must match chain order (default: None)
     max_trace_draws : int, optional
         Maximum number of draws to show in trace plots (default: 500)
     max_acf_lags : int, optional
@@ -135,14 +134,28 @@ def plot_ess_diagnostics(
     plt.Figure
         The created figure object
     """
-    n_chains = len(chains)
+    # Convert to dict format for consistency
+    if isinstance(chains, list):
+        chains = {f"chain{i}": c for i, c in enumerate(chains)}
     
-    # Set defaults for labels and colors
+    n_chains = len(chains)
+    chain_ids = list(chains.keys())
+    
+    # Default color palette
+    default_colors = ["steelblue", "seagreen", "tomato", "gold", "purple", "coral",
+                      "brown", "pink", "gray", "olive"]
+    
+    # Set up labels
     if labels is None:
-        labels = {key: key for key in chains.keys()}
+        labels = {cid: f"chain{i+1}" for i, cid in enumerate(chain_ids)}
+    elif isinstance(labels, list):
+        labels = {cid: l for cid, l in zip(chain_ids, labels)}
+    
+    # Set up colors
     if colors is None:
-        color_palette = ["steelblue", "seagreen", "tomato", "gold", "purple", "coral"]
-        colors = {key: color_palette[i % len(color_palette)] for i, key in enumerate(chains.keys())}
+        colors = {cid: default_colors[i % len(default_colors)] for i, cid in enumerate(chain_ids)}
+    elif isinstance(colors, list):
+        colors = {cid: c for cid, c in zip(chain_ids, colors)}
     
     fig, axes = plt.subplots(2, n_chains, figsize=figsize)
     
@@ -150,7 +163,8 @@ def plot_ess_diagnostics(
     if n_chains == 1:
         axes = axes.reshape(2, 1)
     
-    for col, (chain_id, chain) in enumerate(chains.items()):
+    for col, chain_id in enumerate(chain_ids):
+        chain = chains[chain_id]
         label = labels.get(chain_id, chain_id)
         color = colors.get(chain_id, "steelblue")
         n = len(chain)
@@ -159,8 +173,6 @@ def plot_ess_diagnostics(
         ax_tr = axes[0, col]
         trace_end = min(max_trace_draws, n)
         ax_tr.plot(chain[:trace_end], lw=0.7, color=color, alpha=0.85)
-        if show_trace_zero_line:
-            ax_tr.axhline(0, color="gray", lw=0.5, ls="--")
         ax_tr.set_title(label, fontsize=10)
         ax_tr.set_xlabel("Iteration", fontsize=9)
         ax_tr.set_ylabel(r"$\theta$", fontsize=9)

@@ -145,33 +145,49 @@ def geweke_sweep(
     return starts, zscores
 
 
-def plot_geweke_sweeps(
-    sweeps: Sequence[tuple[ArrayLike, ArrayLike]],
-    labels: Sequence[str] | None = None,
-    colors: Sequence[Any | None] | None = None,
+
+def plot_geweke_diagnostics(
+    chains: dict[str, np.ndarray] | list[np.ndarray],
+    labels: dict[str, str] | list[str] | None = None,
+    colors: dict[str, str] | list[str] | None = None,
+    first: float = 0.1,
+    last: float = 0.5,
+    intervals: int = 20,
     title: str = "Geweke Convergence Diagnostic - Multi-Interval Sweep",
     figsize_per_plot: tuple[float, float] = (6, 4),
-    save_path: str | PathLike[str] | None = None,
-    show: bool = True,
+    output_file: str | None = None,
+    show_plot: bool = True,
 ) -> tuple[Any, NDArray[Any]]:
-    """Plot one or more Geweke sweep results.
+    """Plot Geweke convergence diagnostics for multiple chains.
+
+    This is a convenience function that computes Geweke sweeps internally and
+    then plots them. It follows the same interface pattern as plot_ess_diagnostics()
+    and plot_ipsrf_diagnostics().
 
     Parameters
     ----------
-    sweeps : Sequence[tuple[ArrayLike, ArrayLike]]
-        Sequence of ``(starts, zscores)`` pairs as returned by ``geweke_sweep``.
-    labels : Sequence[str] | None, default=None
-        Optional subplot titles for each sweep.
-    colors : Sequence[Any | None] | None, default=None
-        Optional matplotlib-compatible color for each sweep.
-    title : str
-        Figure-level title.
-    figsize_per_plot : tuple[float, float], default=(6, 4)
-        Per-subplot width and height in inches.
-    save_path : str | PathLike[str] | None, default=None
-        If provided, save the figure to this path.
-    show : bool, default=True
-        Whether to call ``plt.show()``.
+    chains : dict[str, np.ndarray] | list[np.ndarray]
+        Dictionary mapping chain identifiers to chain data, or a list of chains.
+    labels : dict[str, str] | list[str] | None, default=None
+        Optional labels for each chain. If None, creates labels as "chain1", "chain2", etc.
+        Can be a dict mapping chain IDs to labels, or a list of labels in chain order.
+    colors : dict[str, str] | list[str] | None, default=None
+        Optional matplotlib-compatible colors for each chain. If None, uses default palette.
+        Can be a dict mapping chain IDs to colors, or a list of colors in chain order.
+    first : float, default=0.1
+        Fraction of each chain used for the leading comparison window in Geweke test.
+    last : float, default=0.5
+        Fraction of each chain used for the trailing comparison window in Geweke test.
+    intervals : int, default=20
+        Number of starting positions evaluated across each chain in the sweep.
+    title : str, optional
+        Figure-level title (default: "Geweke Convergence Diagnostic - Multi-Interval Sweep")
+    figsize_per_plot : tuple[float, float], optional
+        Per-subplot width and height in inches (default: (6, 4))
+    output_file : str | None, optional
+        If provided, save the figure to this path (default: None)
+    show_plot : bool, optional
+        Whether to call ``plt.show()`` (default: True)
 
     Returns
     -------
@@ -181,24 +197,72 @@ def plot_geweke_sweeps(
     Raises
     ------
     ValueError
-        If no sweeps are provided or if ``labels`` or ``colors`` lengths do not
-        match the number of sweeps.
+        If chains is empty or if ``first + last >= 1.0``.
     """
     import matplotlib.pyplot as plt
+    # Normalize chains to dict format
+    if isinstance(chains, list):
+        chain_ids = [f"chain{i}" for i in range(len(chains))]
+        chains_dict = {cid: c for cid, c in zip(chain_ids, chains)}
+    else:
+        chain_ids = list(chains.keys())
+        chains_dict = chains
 
-    if not sweeps:
-        raise ValueError("sweeps must contain at least one (starts, zscores) result.")
+    if not chains_dict:
+        raise ValueError("chains must contain at least one chain.")
 
-    n_sweeps = len(sweeps)
+    # Normalize labels
     if labels is None:
-        labels = [f"Sweep {i + 1}" for i in range(n_sweeps)]
-    if colors is None:
-        colors = [None] * n_sweeps
+        labels_dict = {cid: f"chain{i+1}" for i, cid in enumerate(chain_ids)}
+    elif isinstance(labels, dict):
+        labels_dict = labels
+    else:
+        labels_dict = {cid: l for cid, l in zip(chain_ids, labels)}
 
-    if len(labels) != n_sweeps:
-        raise ValueError("labels length must match sweeps length.")
-    if len(colors) != n_sweeps:
-        raise ValueError("colors length must match sweeps length.")
+    # Normalize colors
+    default_colors = ["steelblue", "seagreen", "tomato", "gold", "purple", "coral",
+                      "brown", "pink", "gray", "olive"]
+    if colors is None:
+        colors_dict = {cid: default_colors[i % len(default_colors)]
+                       for i, cid in enumerate(chain_ids)}
+    elif isinstance(colors, dict):
+        colors_dict = colors
+    else:
+        colors_dict = {cid: c for cid, c in zip(chain_ids, colors)}
+
+    # Compute sweeps for each chain
+    sweeps = []
+    labels = []
+    colors = []
+
+    for cid in chain_ids:
+        chain = chains_dict[cid]
+        starts, zscores = geweke_sweep(chain, first=first, last=last, intervals=intervals)
+        sweeps.append((starts, zscores))
+        labels.append(labels_dict.get(cid, cid))
+        colors.append(colors_dict.get(cid))
+    
+    n_sweeps = len(sweeps)
+    
+    # Default color palette
+    default_colors = ["steelblue", "seagreen", "tomato", "gold", "purple", "coral",
+                      "brown", "pink", "gray", "olive"]
+    
+    # Set up labels
+    if labels is None:
+        labels = [f"sweep{i+1}" for i in range(n_sweeps)]
+    else:
+        labels = list(labels)
+        if len(labels) != n_sweeps:
+            raise ValueError("labels length must match sweeps length.")
+    
+    # Set up colors
+    if colors is None:
+        colors = [default_colors[i % len(default_colors)] for i in range(n_sweeps)]
+    else:
+        colors = list(colors)
+        if len(colors) != n_sweeps:
+            raise ValueError("colors length must match sweeps length.")
 
     fig, axes = plt.subplots(
         1,
@@ -222,9 +286,9 @@ def plot_geweke_sweeps(
     fig.suptitle(title, fontsize=13, y=1.02)
     fig.tight_layout()
 
-    if save_path is not None:
-        fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    if show:
+    if output_file is not None:
+        fig.savefig(output_file, dpi=150, bbox_inches="tight")
+    if show_plot:
         plt.show()
 
     return fig, axes
