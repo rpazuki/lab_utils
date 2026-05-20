@@ -98,8 +98,9 @@ def plot_ess_diagnostics(
     max_trace_draws: int = 500,
     max_acf_lags: int = 200,
     figsize: tuple[int, int] = (15, 8),
-    output_file: str | None = "ess_comparison.png",
+    output_file: str | None = None,
     show_plot: bool = True,
+    show_trace_zero_line: bool = False,
 ) -> plt.Figure:
     """
     Plot trace plots and autocorrelation functions for MCMC chains.
@@ -125,7 +126,7 @@ def plot_ess_diagnostics(
     figsize : tuple[int, int], optional
         Figure size as (width, height) (default: (15, 8))
     output_file : str | None, optional
-        Path to save figure. If None, does not save (default: "ess_comparison.png")
+        Path to save figure. If None, does not save (default: None)
     show_plot : bool, optional
         Whether to display the plot (default: True)
 
@@ -158,7 +159,8 @@ def plot_ess_diagnostics(
         ax_tr = axes[0, col]
         trace_end = min(max_trace_draws, n)
         ax_tr.plot(chain[:trace_end], lw=0.7, color=color, alpha=0.85)
-        ax_tr.axhline(0, color="gray", lw=0.5, ls="--")
+        if show_trace_zero_line:
+            ax_tr.axhline(0, color="gray", lw=0.5, ls="--")
         ax_tr.set_title(label, fontsize=10)
         ax_tr.set_xlabel("Iteration", fontsize=9)
         ax_tr.set_ylabel(r"$\theta$", fontsize=9)
