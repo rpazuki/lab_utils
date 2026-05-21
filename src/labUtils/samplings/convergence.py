@@ -5,7 +5,7 @@ import numpy as np
 
 from .diagnostics.geweke_test import geweke_sweep
 from .diagnostics.effective_sample_size import ess_sweep
-from .diagnostics.ipsrf import ipsrf, cipsrf
+from .diagnostics.ipsrf import cipsrf
 
 
 def convergence_matrix(
@@ -83,7 +83,7 @@ def convergence_matrix(
             raise ValueError(f"Chain {cid} is empty.")
         
         # Geweke test: check if all Z-scores are within threshold
-        geweke_intervals, geweke_z_scores = geweke_sweep(
+        sweep_starts, geweke_z_scores = geweke_sweep(
             chain, first=geweke_first, last=geweke_last, intervals=geweke_intervals
         )
         max_zscore = np.max(np.abs(geweke_z_scores))
