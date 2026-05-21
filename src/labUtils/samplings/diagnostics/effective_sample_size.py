@@ -1,6 +1,10 @@
+from typing import TYPE_CHECKING
+
 import numpy as np
 # import arviz as az
-import matplotlib.pyplot as plt
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +90,67 @@ def ess_from_chain(x: np.ndarray) -> float:
     tau = geyer_ips(rho)
     return len(x) / tau
 
+def ess_sweep(
+    chain: np.ndarray,
+    subchains_length: int = 1000,
+    fraction: float | None = None,
+) -> np.ndarray:
+    """
+    Compute ESS for fixed-length subchains within a chain.
+
+    The chain is split into consecutive non-overlapping subchains of equal length,
+    and ESS is computed independently for each subchain. If ``fraction`` is
+    provided, subchain length is set to ``floor(fraction * N)`` where ``N`` is
+    chain length. Any remainder samples at the end that do not fill a complete
+    subchain are ignored.
+
+    Parameters
+    ----------
+    chain : np.ndarray
+        1-D array representing an MCMC chain of length N.
+    subchains_length : int, optional
+        Length of each subchain. Must be positive (default: 1000).
+    fraction : float | None, optional
+        Fraction in ``(0, 1]`` used to derive subchain length as
+        ``int(fraction * N)``. If provided, overrides ``subchains_length``
+        (default: None).
+
+    Returns
+    -------
+    np.ndarray
+        Array of ESS values, one per full subchain.
+
+    Raises
+    ------
+    ValueError
+        If ``chain`` is empty, if ``subchains_length <= 0``, or if ``fraction``
+        is not in ``(0, 1]``.
+    """
+    chain = np.asarray(chain, dtype=float)
+    n = len(chain)
+
+    if n == 0:
+        raise ValueError("chain must contain at least one sample.")
+
+    if subchains_length <= 0:
+        raise ValueError("subchains_length must be a positive integer.")
+
+    if fraction is not None:
+        if not (0.0 < fraction <= 1.0):
+            raise ValueError("fraction must be in the interval (0, 1].")
+        subchains_length = int(n * fraction)
+
+    subchains_length = max(1, min(subchains_length, n))
+    subchains_number = n // subchains_length
+
+    # split the chain as fixed length subchains and compute ESS for each
+    ess_values = np.array([
+        ess_from_chain(chain[i * subchains_length : (i + 1) * subchains_length])
+        for i in range(subchains_number)
+    ])
+    return ess_values
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Visualization function
@@ -100,7 +165,7 @@ def plot_ess_diagnostics(
     figsize: tuple[int, int] = (15, 8),
     output_file: str | None = None,
     show_plot: bool = True,
-) -> plt.Figure:
+) -> "Figure":
     """
     Plot trace plots and autocorrelation functions for MCMC chains.
 
@@ -131,9 +196,11 @@ def plot_ess_diagnostics(
 
     Returns
     -------
-    plt.Figure
+    Figure
         The created figure object
     """
+    import matplotlib.pyplot as plt
+
     # Convert to dict format for consistency
     if isinstance(chains, list):
         chains = {f"chain{i}": c for i, c in enumerate(chains)}

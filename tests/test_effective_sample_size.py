@@ -7,6 +7,7 @@ from labUtils.samplings.diagnostics.effective_sample_size import (
     autocorr_fft,
     geyer_ips,
     ess_from_chain,
+    ess_sweep,
 )
 
 
@@ -202,7 +203,7 @@ class TestAutocorr:
 
     def test_autocorr_fft_starts_with_one(self):
         """Autocorr at lag 0 should be 1.0."""
-        x = np.random.randn(1000)
+        x = np.random.default_rng(101).normal(size=1000)
         rho = autocorr_fft(x)
         assert rho[0] == pytest.approx(1.0, abs=1e-10)
 
@@ -216,7 +217,7 @@ class TestAutocorr:
 
     def test_autocorr_fft_iid_small(self):
         """i.i.d. data should have small autocorr at lag > 0."""
-        samples = np.random.randn(10_000)
+        samples = np.random.default_rng(102).normal(size=10_000)
         rho = autocorr_fft(samples)
         # For i.i.d., rho[k] should be small for k > 0
         assert abs(rho[1]) < 0.1
@@ -227,15 +228,16 @@ class TestGeyer:
 
     def test_geyer_ips_ge_one(self):
         """τ_int should always be ≥ 1."""
+        rng = np.random.default_rng(103)
         for _ in range(10):
-            x = np.random.randn(1000)
+            x = rng.normal(size=1000)
             rho = autocorr_fft(x)
             tau = geyer_ips(rho)
             assert tau >= 1.0
 
     def test_geyer_ips_iid_near_one(self):
         """For i.i.d., τ_int should be close to 1."""
-        samples = np.random.randn(50_000)
+        samples = np.random.default_rng(104).normal(size=50_000)
         rho = autocorr_fft(samples)
         tau = geyer_ips(rho)
         assert 0.8 < tau < 1.5, f"τ_int={tau} not close to 1 for i.i.d."
@@ -246,3 +248,63 @@ class TestGeyer:
         rho = autocorr_fft(chain)
         tau = geyer_ips(rho)
         assert tau > 5, f"τ_int={tau} not large for correlated chain"
+
+
+class TestESSSweep:
+    """Tests for ESS over fixed-length subchains."""
+
+    def test_ess_sweep_matches_manual_chunk_computation(self):
+        """ess_sweep should match manual ESS computed on each subchain."""
+        chain = iid_normal(n=1000, seed=11)
+        subchains_length = 200
+
+        ess_values = ess_sweep(chain, subchains_length=subchains_length)
+        expected = np.array(
+            [
+                ess_from_chain(chain[i * 200 : (i + 1) * 200])
+                for i in range(len(chain) // 200)
+            ]
+        )
+
+        np.testing.assert_allclose(ess_values, expected)
+
+    def test_ess_sweep_fraction_overrides_subchains_length(self):
+        """fraction should set subchain length and override explicit length."""
+        chain = iid_normal(n=1000, seed=22)
+
+        by_fraction = ess_sweep(chain, subchains_length=50, fraction=0.2)
+        by_length = ess_sweep(chain, subchains_length=200)
+
+        np.testing.assert_allclose(by_fraction, by_length)
+
+    def test_ess_sweep_uses_single_subchain_when_length_exceeds_chain(self):
+        """If requested subchain length exceeds chain, use full chain once."""
+        chain = metropolis_normal(n=300, seed=33)
+        ess_values = ess_sweep(chain, subchains_length=1000)
+
+        assert ess_values.shape == (1,)
+        assert ess_values[0] == pytest.approx(ess_from_chain(chain))
+
+    def test_ess_sweep_invalid_subchains_length_raises(self):
+        """subchains_length must be positive."""
+        chain = iid_normal(n=100, seed=44)
+
+        with pytest.raises(ValueError, match="subchains_length"):
+            ess_sweep(chain, subchains_length=0)
+
+    def test_ess_sweep_invalid_fraction_raises(self):
+        """fraction must lie in (0, 1]."""
+        chain = iid_normal(n=100, seed=55)
+
+        with pytest.raises(ValueError, match="fraction"):
+            ess_sweep(chain, fraction=0.0)
+
+        with pytest.raises(ValueError, match="fraction"):
+            ess_sweep(chain, fraction=1.2)
+
+    def test_ess_sweep_empty_chain_raises(self):
+        """Empty chain should raise ValueError."""
+        chain = np.array([])
+
+        with pytest.raises(ValueError, match="chain"):
+            ess_sweep(chain)

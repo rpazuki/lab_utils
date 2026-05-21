@@ -1,6 +1,9 @@
+from typing import TYPE_CHECKING
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import Sequence
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -128,7 +131,7 @@ def plot_ipsrf_diagnostics(
     figsize: tuple[int, int] = (16, 10),
     output_file: str | None = None,
     show_plot: bool = True,
-) -> plt.Figure:
+) -> "Figure":
     """
     Plot IPSRF convergence diagnostics for MCMC chains.
 
@@ -157,9 +160,11 @@ def plot_ipsrf_diagnostics(
 
     Returns
     -------
-    plt.Figure
+    Figure
         The created figure object
     """
+    import matplotlib.pyplot as plt
+
     # Convert to dict format for consistency
     if isinstance(chains, list):
         chains = {f"chain{i}": c for i, c in enumerate(chains)}

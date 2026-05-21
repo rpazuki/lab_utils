@@ -12,7 +12,6 @@ from math import e
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
@@ -675,6 +674,8 @@ def plot_single_series(
     pred_col : str
         Column name for predicted values (default: "od600_fit")
     """
+
+    import matplotlib.pyplot as plt
 
     t = series_df[time_col].to_numpy(dtype=float)
     y = series_df[value_col].to_numpy(dtype=float)
