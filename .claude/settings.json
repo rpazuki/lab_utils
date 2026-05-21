@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_synthetic.py -x --tb=short)",
+      "Bash(cat tests/__init__.py)",
+      "Bash(.venv/bin/python -c \"import labUtils; print\\(labUtils.__file__\\)\")",
+      "Bash(.venv/bin/python -m pytest tests/test_metabolic_mapping.py -x)",
+      "Bash(PYTHONPATH=src .venv/bin/python -m pytest tests/test_metabolic_mapping.py -x --tb=short)",
+      "Bash(PYTHONPATH=src .venv/bin/python -m pytest tests/test_synthetic.py --tb=short)",
+      "Bash(PYTHONPATH=src .venv/bin/python -m pytest tests/test_synthetic.py::TestPhenotype::test_formula_rejects_disallowed_names tests/test_synthetic.py::TestPhenotype::test_formula_noise_deterministic tests/test_synthetic.py::TestGenerateDataset::test_community_exchange_id_mismatch_resolved --tb=long)"
+    ]
+  }
+}
