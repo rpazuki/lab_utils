@@ -10,21 +10,69 @@ from __future__ import annotations
 
 import csv
 import re
+from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import pandas as pd
 
 __all__ = [
+    "ColumnSchema",
+    "ParseResult",
+    "ReplicateStats",
+    "CustomReplicateRule",
     "parse_raw_CLARIOstar_export",
     "parse_protocol_metadata",
     "parse",
+    "parse_result",
     "report",
     "parse_time_label",
     "calculate_replicate_statistics_by_well",
     "calculate_replicate_statistics_by_custom",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Output containers (synthetic.py-style)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ColumnSchema:
+    """Configurable column names used by parsing / replicate-stats functions.
+
+    Defaults match the current pipeline; pass a custom instance to rename columns
+    end-to-end without touching every call site.
+    """
+
+    well: str = "well"
+    well_row: str = "well_row"
+    well_col: str = "well_col"
+    strain: str = "strain"
+    is_blank: str = "is_blank"
+    media_type: str = "media_type"
+    value: str = "od"
+
+
+@dataclass
+class ParseResult:
+    """Output of `parse_result`. Wraps the merged dataframe plus its inputs."""
+
+    df: pd.DataFrame
+    raw_df: pd.DataFrame
+    meta_df: pd.DataFrame
+    value_column_name: str = "od"
+
+
+@dataclass
+class ReplicateStats:
+    """Output of `calculate_replicate_statistics_*` (dataclass-returning sibling)."""
+
+    df: pd.DataFrame
+    grouping: str
+    sample_size_used: int | dict[str, int] = 0
+    direction: str | None = None
 
 
 class CustomReplicateRule(TypedDict, total=False):
@@ -190,26 +238,90 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
     return long_df
 
 
+def _normalize_section_marker(line: str) -> str:
+    """Strip trailing commas/whitespace that some exports append to `=== Title ===`."""
+    return re.sub(r"\s*,+\s*$", "", line.strip())
+
+
+def _is_section_marker(line: str) -> bool:
+    normalized = _normalize_section_marker(line)
+    return normalized.startswith("===") and normalized.endswith("===")
+
+
 def split_sections(meta_text: str):
     """Split the custom metadata file into sections keyed by the === Title === line."""
     sections = {}
-
-    def _normalize_marker_line(line: str) -> str:
-        # Some exports add trailing commas after section headers.
-        return re.sub(r"\s*,+\s*$", "", line.strip())
-
-    def _is_section_marker(line: str) -> bool:
-        normalized = _normalize_marker_line(line)
-        return normalized.startswith("===") and normalized.endswith("===")
-
     lines = [ln.strip() for ln in meta_text.splitlines() if ln.strip() != "" and not re.fullmatch(r"[\s,]+", ln)]
     idxs = [i for i, ln in enumerate(lines) if _is_section_marker(ln)]
     idxs.append(len(lines))
     for s, e in zip(idxs, idxs[1:]):
-        title = _normalize_marker_line(lines[s]).strip("= ").strip()
+        title = _normalize_section_marker(lines[s]).strip("= ").strip()
         block = [ln for ln in lines[s + 1 : e] if not _is_section_marker(ln)]
         sections[title] = "\n".join(block)
     return sections
+
+
+def _make_group_id(row: pd.Series, is_alphabetical: bool) -> str:
+    """Format the per-row replicate group label (e.g. `A_1-3` or `ABC_1`).
+
+    Promoted from a nested closure so both `calculate_replicate_statistics_*`
+    functions can share the exact same formatting logic.
+    """
+    wells_list = row["wells"].split(",")
+    if is_alphabetical:
+        row_letter = wells_list[0][0]
+        col_nums = [int(w[1:]) for w in wells_list]
+        if len(col_nums) == 1:
+            return f"{row_letter}_{col_nums[0]}"
+        return f"{row_letter}_{min(col_nums)}-{max(col_nums)}"
+    row_letters = "".join([w[0] for w in wells_list])
+    col_num = wells_list[0][1:]
+    return f"{row_letters}_{col_num}"
+
+
+def _load_config(config: dict | str | Path) -> dict:
+    """Load a media_bot pipeline config (yaml file or dict).
+
+    Mirrors `synthetic._load_config`. Accepts a dict directly or a path to a yaml
+    file; unwraps a top-level `media_bot:` key if present. Currently unused by
+    the public API — exposed for downstream pipelines that want to declare their
+    parsing / replicate-stats settings in yaml.
+    """
+    if isinstance(config, (str, Path)):
+        import yaml  # local import — yaml is optional for the rest of the module
+
+        with open(config, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    else:
+        data = config
+    if not isinstance(data, dict):
+        raise ValueError("media_bot config must be a mapping at top level.")
+    if "media_bot" in data:
+        data = data["media_bot"]
+    return data
+
+
+def _try_csv_block(csv_text: str) -> pd.DataFrame | None:
+    """Best-effort CSV parser used inside `parse_protocol_metadata` fallbacks."""
+    cleaned_lines = []
+    for ln in csv_text.splitlines():
+        stripped = ln.strip()
+        if not stripped:
+            continue
+        if re.fullmatch(r"[\s,]+", stripped):
+            continue
+        marker_candidate = re.sub(r"\s*,+\s*$", "", stripped)
+        if marker_candidate.startswith("===") and marker_candidate.endswith("==="):
+            continue
+        cleaned_lines.append(stripped)
+    if not cleaned_lines:
+        return None
+    try:
+        candidate = pd.read_csv(StringIO("\n".join(cleaned_lines)))
+    except Exception:
+        return None
+    candidate.columns = [str(c).strip() for c in candidate.columns]
+    return candidate if "Well" in candidate.columns else None
 
 
 def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
@@ -217,28 +329,6 @@ def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
     text = meta_path.read_text(encoding="utf-8", errors="ignore")
     sections = split_sections(text)
     df = None
-
-    def _try_parse_csv_block(csv_text: str) -> pd.DataFrame | None:
-        cleaned_lines = []
-        for ln in csv_text.splitlines():
-            stripped = ln.strip()
-            if not stripped:
-                continue
-            if re.fullmatch(r"[\s,]+", stripped):
-                continue
-            marker_candidate = re.sub(r"\s*,+\s*$", "", stripped)
-            if marker_candidate.startswith("===") and marker_candidate.endswith("==="):
-                continue
-            cleaned_lines.append(stripped)
-        if not cleaned_lines:
-            return None
-
-        try:
-            candidate = pd.read_csv(StringIO("\n".join(cleaned_lines)))
-        except Exception:
-            return None
-        candidate.columns = [str(c).strip() for c in candidate.columns]
-        return candidate if "Well" in candidate.columns else None
 
     key = next((k for k in sections if "experiment data" in k.lower()), None)
     if key is None:
@@ -261,7 +351,7 @@ def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
 
     # Fallback 1: file might be plain CSV with no section markers
     if df is None:
-        df = _try_parse_csv_block(text)
+        df = _try_csv_block(text)
 
     # Fallback 2: file may have preamble lines before the CSV header
     if df is None:
@@ -275,7 +365,7 @@ def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
             None,
         )
         if start_idx is not None:
-            df = _try_parse_csv_block("\n".join(raw_lines[start_idx:]))
+            df = _try_csv_block("\n".join(raw_lines[start_idx:]))
 
     if df is None:
         raise ValueError('Could not find "Experiment Data" section in the metadata file.')
@@ -381,6 +471,26 @@ def parse(raw_data: pd.DataFrame | Path, meta_data: pd.DataFrame | Path, value_c
     ordered_cols = [c for c in ordered_cols if c in df.columns]
     df = df[ordered_cols].copy()
     return df
+
+
+def parse_result(
+    raw_data: pd.DataFrame | Path,
+    meta_data: pd.DataFrame | Path,
+    value_column_name: str = "od",
+) -> ParseResult:
+    """Dataclass-returning sibling of `parse`.
+
+    Same behavior; returns a `ParseResult` carrying the merged dataframe plus
+    references to the resolved raw and metadata frames.
+    """
+    raw_long = (
+        parse_raw_CLARIOstar_export(raw_data, value_column_name=value_column_name)
+        if isinstance(raw_data, Path)
+        else raw_data
+    )
+    meta = parse_protocol_metadata(meta_data) if isinstance(meta_data, Path) else meta_data
+    df = parse(raw_long, meta, value_column_name=value_column_name)
+    return ParseResult(df=df, raw_df=raw_long, meta_df=meta, value_column_name=value_column_name)
 
 
 def report(
@@ -609,23 +719,9 @@ def calculate_replicate_statistics_by_well(
     }
     stats_df = stats_df.rename(columns=rename_map)
 
-    # Create group_id column
-    def create_group_id(row):
-        wells_list = row["wells"].split(",")
-        if is_alphabetical:
-            # For alphabetical: use row letter and column range (e.g., "A_1-3")
-            row_letter = wells_list[0][0]  # Get row letter from first well
-            col_nums = [int(w[1:]) for w in wells_list]
-            if len(col_nums) == 1:
-                return f"{row_letter}_{col_nums[0]}"
-            return f"{row_letter}_{min(col_nums)}-{max(col_nums)}"
-        else:
-            # For numerical: use row range and column number (e.g., "ABC_1")
-            row_letters = "".join([w[0] for w in wells_list])
-            col_num = wells_list[0][1:]  # Get column number from first well
-            return f"{row_letters}_{col_num}"
-
-    stats_df["group_id"] = stats_df.apply(create_group_id, axis=1)
+    stats_df["group_id"] = stats_df.apply(
+        lambda row: _make_group_id(row, is_alphabetical=is_alphabetical), axis=1
+    )
 
     # Reorder columns for better readability
     first_cols = [
@@ -992,23 +1088,9 @@ def calculate_replicate_statistics_by_custom(
         stats_df = stats_df.rename(columns={"count": "n_replicates"})
         stats_df["strain"] = output_strain
 
-        # Create group_id column
-        def create_group_id(row):
-            wells_list = row["wells"].split(",")
-            if is_alphabetical:  # noqa: B023
-                # For alphabetical: use row letter and column range (e.g., "A_1-3")
-                row_letter = wells_list[0][0]  # Get row letter from first well
-                col_nums = [int(w[1:]) for w in wells_list]
-                if len(col_nums) == 1:
-                    return f"{row_letter}_{col_nums[0]}"
-                return f"{row_letter}_{min(col_nums)}-{max(col_nums)}"
-            else:
-                # For numerical: use row range and column number (e.g., "ABC_1")
-                row_letters = "".join([w[0] for w in wells_list])
-                col_num = wells_list[0][1:]  # Get column number from first well
-                return f"{row_letters}_{col_num}"
-
-        stats_df["group_id"] = stats_df.apply(create_group_id, axis=1)
+        stats_df["group_id"] = stats_df.apply(
+            lambda row, _alpha=is_alphabetical: _make_group_id(row, is_alphabetical=_alpha), axis=1
+        )
 
         # Drop group_num as it's internal
         if "group_num" in stats_df.columns:

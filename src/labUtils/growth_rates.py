@@ -7,7 +7,10 @@
 #  License: MIT                                              #
 ##############################################################
 
+from __future__ import annotations
+
 import logging
+from dataclasses import dataclass, field
 from math import e
 from pathlib import Path
 from typing import Any
@@ -15,6 +18,33 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
+
+
+# ---------------------------------------------------------------------------
+# Output containers (synthetic.py-style)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FitResult:
+    """Output of `fit_*_per_series_result`. Wraps the params dataframe + diagnostics."""
+
+    params_df: pd.DataFrame
+    method: str
+    failed_groups: list[tuple] = field(default_factory=list)
+
+
+@dataclass
+class PredictionResult:
+    """Output of `predict_modified_gompertz_per_series_result`."""
+
+    preds_df: pd.DataFrame
+    params_df: pd.DataFrame
+
+
+# ---------------------------------------------------------------------------
+# Math primitive
+# ---------------------------------------------------------------------------
 
 
 def gompertz(t, y0, A_0, mu_max, lam, clip_exp):
@@ -26,6 +56,32 @@ def gompertz(t, y0, A_0, mu_max, lam, clip_exp):
     z = (mu_max * e / A_0) * (lam - t) + 1.0
     z = np.clip(z, -clip_exp, clip_exp)
     return y0 + A_0 * np.exp(-np.exp(z))
+
+
+# ---------------------------------------------------------------------------
+# Private helpers — promoted from inner closures
+# ---------------------------------------------------------------------------
+
+
+def _trimmed_moving_mean(y: np.ndarray, smooth_window_size: int) -> np.ndarray:
+    """Sliding-window trimmed mean (drops min+max in each window).
+
+    Originally a closure inside `fit_max_growth_rate_per_series`; promoted to
+    module scope so it can be unit-tested and reused.
+    """
+    if len(y) < 2 * smooth_window_size:
+        return y.copy()
+    y_smoothed_list = list(y[:smooth_window_size])
+    for i in range(smooth_window_size, len(y) - smooth_window_size):
+        sub_y = np.array(y[i - smooth_window_size : i + smooth_window_size + 1])
+        sub_y_trimmed = sub_y.copy()
+        i_max = np.argmax(sub_y_trimmed)
+        i_min = np.argmin(sub_y_trimmed)
+        sub_y_trimmed[i_max] = np.nan
+        sub_y_trimmed[i_min] = np.nan
+        y_smoothed_list.append(np.nanmean(sub_y_trimmed))
+    y_smoothed_list.extend(y[-smooth_window_size:])
+    return np.array(y_smoothed_list)
 
 
 def transform_to_log_n_n0(
@@ -106,34 +162,7 @@ def fit_max_growth_rate_per_series(
     """
 
     def curve_smoothing(y):
-        """Simple moving average smoothing with window size smooth_window_size
-
-        This function is originaly from AMN paper's repository.
-        Applies trimmed mean (removing min/max) in a sliding window.
-        """
-        # curve smoothing by running average omitting min and max of the window
-        # input is y, the time series of the OD measures (numpy array)
-        # returns y_smoothed, the same time series after smoothing (numpy array)
-
-        # Handle edge case: if data too small, return as-is
-        if len(y) < 2 * smooth_window_size:
-            return y.copy()
-
-        # Convert to list for easier manipulation, then back to array
-        y_smoothed_list = list(y[:smooth_window_size])
-
-        for i in range(smooth_window_size, len(y) - smooth_window_size):
-            sub_y = np.array(y[i - smooth_window_size : i + smooth_window_size + 1])
-            # Create a copy to avoid modifying the slice
-            sub_y_trimmed = sub_y.copy()
-            i_max = np.argmax(sub_y_trimmed)
-            i_min = np.argmin(sub_y_trimmed)
-            sub_y_trimmed[i_max] = np.nan
-            sub_y_trimmed[i_min] = np.nan
-            y_smoothed_list.append(np.nanmean(sub_y_trimmed))
-
-        y_smoothed_list.extend(y[-smooth_window_size:])
-        return np.array(y_smoothed_list)
+        return _trimmed_moving_mean(y, smooth_window_size)
 
     def max_growth_one(gdf: pd.DataFrame) -> dict[str, Any]:
         """Unified fitting function that handles any combination of fixed parameters."""
@@ -843,3 +872,115 @@ def plot_and_save(
                 pred_col=pred_col,
                 save_plot=save_plot,
             )
+
+
+# ---------------------------------------------------------------------------
+# Dataclass-returning wrappers (synthetic.py-style)
+# ---------------------------------------------------------------------------
+
+
+def fit_modified_gompertz_per_series_result(
+    df: pd.DataFrame,
+    time_col: str = "time_h",
+    value_col: str = "od600",
+    group_cols: list[str] | None = None,
+    clip_exp: float = 50.0,
+    min_points: int = 5,
+    fixed_params: dict[str, float] | None = None,
+    value_is_log_transformed: bool = True,
+    OD_0_col: str = "n0",  # noqa: N803
+) -> FitResult:
+    """Dataclass-returning sibling of `fit_modified_gompertz_per_series`."""
+    if group_cols is None:
+        group_cols = ["well"]
+    params_df = fit_modified_gompertz_per_series(
+        df,
+        time_col=time_col,
+        value_col=value_col,
+        group_cols=group_cols,
+        clip_exp=clip_exp,
+        min_points=min_points,
+        fixed_params=fixed_params,
+        value_is_log_transformed=value_is_log_transformed,
+        OD_0_col=OD_0_col,
+    )
+    failed = []
+    if "success" in params_df.columns:
+        for _, row in params_df.loc[~params_df["success"].astype(bool)].iterrows():
+            failed.append(tuple(row[col] for col in group_cols))
+    return FitResult(params_df=params_df, method="modified_gompertz", failed_groups=failed)
+
+
+def predict_modified_gompertz_per_series_result(
+    df: pd.DataFrame,
+    params_df: pd.DataFrame,
+    time_col: str = "time_h",
+    value_col: str = "od600",
+    group_cols: list[str] | None = None,
+    clip_exp: float = 50.0,
+) -> PredictionResult:
+    """Dataclass-returning sibling of `predict_modified_gompertz_per_series` (no plotting)."""
+    if group_cols is None:
+        group_cols = ["well"]
+    preds_df = predict_modified_gompertz_per_series(
+        df,
+        params_df,
+        time_col=time_col,
+        value_col=value_col,
+        group_cols=group_cols,
+        clip_exp=clip_exp,
+        save_plot_data=False,
+        show_plots=False,
+        output_dir=None,
+        standard_deviation_column=None,
+    )
+    return PredictionResult(preds_df=preds_df, params_df=params_df)
+
+
+def plot_predictions(
+    preds_df: pd.DataFrame,
+    params_df: pd.DataFrame,
+    time_col: str = "time_h",
+    value_col: str = "od600",
+    group_cols: list[str] | None = None,
+    output_dir: str | Path | None = None,
+    standard_deviation_column: str | None = None,
+    save_plot: bool = True,
+) -> None:
+    """Alias for `plot_and_save` with synthetic.py-style naming.
+
+    Same behavior; use this in new code so the side-effecting plotting step is
+    visibly separate from `predict_modified_gompertz_per_series_result`.
+    """
+    if group_cols is None:
+        group_cols = ["well"]
+    plot_and_save(
+        preds_df=preds_df,
+        params_df=params_df,
+        time_col=time_col,
+        value_col=value_col,
+        group_cols=group_cols,
+        output_dir=output_dir,
+        standard_deviation_column=standard_deviation_column,
+        save_plot=save_plot,
+    )
+
+
+def _load_config(config: dict | str | Path) -> dict:
+    """Optional yaml/dict loader for future growth_rates pipelines.
+
+    Mirrors `synthetic._load_config`. Not yet wired into any public API; included
+    here so downstream pipelines can declare fit/predict settings in yaml.
+    """
+    if isinstance(config, (str, Path)):
+        import yaml
+
+        with open(config, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    else:
+        data = config
+    if not isinstance(data, dict):
+        raise ValueError("growth_rates config must be a mapping at top level.")
+    if "growth_rates" in data:
+        data = data["growth_rates"]
+    return data
