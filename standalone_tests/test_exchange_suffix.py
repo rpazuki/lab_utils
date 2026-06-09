@@ -1,58 +1,46 @@
-"""Test exchange_suffix parameter"""
+"""Tests for exchange_suffix support in current AMN API."""
 
 import pandas as pd
 
-from labUtils.amn_mappings import (create_supplement_exchange_matrix,
-                                   load_default_iml1515_mapping)
+from labUtils.amn_mappings import MediumSource, build_AMN_inputs_dataframe, build_mappings
 
-# Create sample data
-df = pd.DataFrame({
-    'well': ['A1', 'A2', 'A3'],
-    'supplements': ['Glucose', 'Fructose; Adenine', 'Ribose'],
-    'mu_max': [0.2, 0.15, 0.18],
-    'success': [True, True, True]
-})
 
-# Get mapping
-mapping = load_default_iml1515_mapping()
+def _inputs_with_suffix(exchange_suffix: str | None) -> pd.DataFrame:
+    growth_df = pd.DataFrame(
+        {
+            "well": ["A1", "A2"],
+            "supplements": ["Glucose", ""],
+            "mu_max": [0.2, 0.1],
+            "success": [True, True],
+        }
+    )
+    mappings_df = build_mappings(
+        growth_df,
+        supplement_to_exchange_map={
+            "glucose": "EX_glc__D_e",
+            "oxygen": "EX_o2_e_i",
+        },
+        custom_mapping={
+            "oxygen": {
+                "exchange_name": "EX_o2_e_i",
+                "source": MediumSource.FIXED.value,
+                "flux_upper_bound": 10,
+                "mass_per_litre": 0.0,
+            }
+        },
+    )
+    return build_AMN_inputs_dataframe(growth_df, mappings_df, exchange_suffix=exchange_suffix)
 
-print("Test 1: Without suffix (default behavior)")
-print("=" * 70)
-matrix1 = create_supplement_exchange_matrix(
-    df,
-    supplement_to_exchange_map=mapping,
-    supplement_column='supplements',
-    growth_rate_column='mu_max'
-)
-print("Columns:", list(matrix1.columns))
-print(matrix1)
 
-print("\n\nTest 2: With suffix '_input'")
-print("=" * 70)
-matrix2 = create_supplement_exchange_matrix(
-    df,
-    supplement_to_exchange_map=mapping,
-    supplement_column='supplements',
-    growth_rate_column='mu_max',
-    exchange_suffix='_input'
-)
-print("Columns:", list(matrix2.columns))
-print(matrix2)
+def test_exchange_suffix_applies_only_to_exchange_columns():
+    inputs = _inputs_with_suffix("_input")
 
-print("\n\nTest 3: With suffix '_v2' and baseline exchanges")
-print("=" * 70)
-baseline = ['EX_pi_e_i', 'EX_o2_e_i', 'EX_h2o_e_i']
-matrix3 = create_supplement_exchange_matrix(
-    df,
-    supplement_to_exchange_map=mapping,
-    supplement_column='supplements',
-    growth_rate_column='mu_max',
-    baseline_exchanges=baseline,
-    exchange_suffix='_v2'
-)
-print("Columns:", list(matrix3.columns))
-print(matrix3.head())
+    assert "mu_max" in inputs.columns
+    assert "mu_max_input" not in inputs.columns
+    assert all(col.endswith("_input") for col in inputs.columns if col != "mu_max")
 
-print("\n" + "=" * 70)
-print("✓ Note: growth_rate_column 'mu_max' remains unchanged in all cases")
-print("=" * 70)
+
+def test_exchange_suffix_none_keeps_original_exchange_names():
+    inputs = _inputs_with_suffix(None)
+    assert "EX_glc__D_e" in inputs.columns
+    assert "EX_o2_e_i" in inputs.columns

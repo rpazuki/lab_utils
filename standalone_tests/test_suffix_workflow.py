@@ -1,62 +1,56 @@
-"""Test exchange_suffix in complete workflow with bounds template"""
-
-import tempfile
-from pathlib import Path
+"""End-to-end suffix workflow tests against the current API."""
 
 import pandas as pd
 
-from labUtils.amn_mappings import (create_exchange_bounds_template,
-                                   create_supplement_exchange_matrix,
-                                   parse_sbml_exchange_bounds,
-                                   parse_sbml_exchanges)
+from labUtils.amn_mappings import (
+    MediumSource,
+    build_AMN_inputs_dataframe,
+    build_AMN_levels_dataframe,
+    build_mappings,
+)
 
-print("Testing exchange_suffix with complete workflow")
-print("=" * 70)
 
-model_path = Path(tempfile.gettempdir()) / "iML1515.xml"
-
-if model_path.exists():
-    # Parse SBML
-    mapping = parse_sbml_exchanges(model_path)
-    bounds = parse_sbml_exchange_bounds(model_path)
-
-    # Create sample data
-    df = pd.DataFrame({
-        'well': ['A1', 'A2'],
-        'supplements': ['Glucose', 'Fructose'],
-        'mu_max': [0.2, 0.15],
-        'success': [True, True]
-    })
-
-    print("\n1. Create matrix with '_input' suffix:")
-    matrix = create_supplement_exchange_matrix(
-        df,
-        supplement_to_exchange_map=mapping,
-        supplement_column='supplements',
-        growth_rate_column='mu_max',
-        exchange_suffix='_input'
+def test_suffix_workflow_from_mappings_to_levels():
+    growth_df = pd.DataFrame(
+        {
+            "well": ["A1", "A2"],
+            "supplements": ["Glucose", "Fructose"],
+            "mu_max": [0.2, 0.15],
+            "success": [True, True],
+        }
     )
-    print(f"   Columns: {list(matrix.columns)}")
-    print(f"   Shape: {matrix.shape}")
 
-    print("\n2. Create bounds template (should work with suffixed matrix):")
-    # Note: The growth_rate_column is still 'mu_max' (no suffix)
-    template = create_exchange_bounds_template(
-        matrix,
-        growth_rate_column='mu_max',
-        sbml_bounds=bounds
+    mappings_df = build_mappings(
+        growth_df,
+        supplement_to_exchange_map={
+            "glucose": "EX_glc__D_e",
+            "fructose": "EX_fru_e_i",
+            "oxygen": "EX_o2_e_i",
+        },
+        custom_mapping={
+            "oxygen": {
+                "exchange_name": "EX_o2_e_i",
+                "source": MediumSource.FIXED.value,
+                "flux_upper_bound": 9,
+                "mass_per_litre": 0.0,
+            }
+        },
     )
-    print(f"   Template shape: {template.shape}")
-    print(f"   Sample columns: {list(template.columns[:5])}")
 
-    print("\n3. Verify exchange columns have suffix but growth rate doesn't:")
-    exchange_cols = [c for c in matrix.columns if c != 'mu_max']
-    has_suffix = all(c.endswith('_input') for c in exchange_cols)
-    print(f"   All exchange columns have '_input' suffix: {has_suffix}")
-    print(f"   Growth rate column is 'mu_max': {'mu_max' in matrix.columns}")
+    inputs_df = build_AMN_inputs_dataframe(
+        growth_df,
+        mappings_df,
+        exchange_suffix="_input",
+    )
+    flux_cols = [col for col in inputs_df.columns if col != "mu_max"]
+    flux_df = pd.DataFrame({col: [1.0, 2.0] for col in flux_cols} | {"mu_max": [0.2, 0.15]})
+    levels_df = build_AMN_levels_dataframe(
+        inputs_df,
+        mappings_df,
+        flux_df,
+        exchange_suffix="_input",
+    )
 
-    print("\n" + "=" * 70)
-    print("✓ Complete workflow with exchange_suffix successful!")
-    print("=" * 70)
-else:
-    print(f"\niML1515.xml not found at {model_path}")
+    assert "mu_max" in inputs_df.columns
+    assert all(col.endswith("_input") for col in flux_cols)
+    assert set(levels_df.columns) - {"name"} == set(flux_cols)

@@ -1,0 +1,80 @@
+# =============================================================================
+# Synthetic in-silico dataset generation config.
+#
+# Consumed by `labUtils.synthetic.generate_dataset`. Produces flux dataframes
+# in the same shape as `amn_mappings.build_supplement_flux_dataframe`, ready
+# for `fba/fba_tools.solve_fba` and the sampling code, but without any actual
+# lab measurements.
+#
+# Supports single-organism and co-culture / community setups via the
+# `organisms` block.
+#
+# Exchange-reaction IDs are organism-specific. The generator does NOT assume
+# the BiGG `EX_` prefix anywhere; IDs are taken from each organism's mapping
+# (which in turn is grounded in that organism's SBML).
+# =============================================================================
+
+synthetic:
+
+  # Per-organism configuration. Add more entries for community / co-culture.
+  organisms:
+    ecoli:
+      # SBML file used when phenotype.mode == 'fba'. Optional otherwise.
+      sbml: /path/to/iML1515.xml
+      # Optional: reuse an existing exchange-mapping yaml from the yamls/ dir.
+      exchange_mapping: custom_exchange_mapping.yaml
+      # Optional: applied to every exchange column in this organism's flux table.
+      exchange_suffix: _i
+      # Required: common-name -> exchange-reaction-id mapping. Match the IDs in
+      # your SBML; the synthetic generator never guesses the prefix.
+      supplement_to_exchange_map:
+        glucose: EX_glc__D_e
+        uracil:  EX_ura_e
+        glycine: EX_gly_e
+      # Optional: explicit molecular weights (g/mol). If omitted, the generator
+      # falls back to MW back-derived from the mapping (which itself depends on
+      # `pubchempy`). Specify these when running offline or when you want
+      # deterministic MW values across runs.
+      molecular_weights:
+        glucose: 180.156
+        uracil: 112.0868
+        glycine: 75.067
+
+    # Example community member with a different exchange convention.
+    # bsubtilis:
+    #   sbml: /path/to/iYO844.xml
+    #   exchange_suffix: _i
+    #   supplement_to_exchange_map:
+    #     glucose: R_EX_glc__D_e   # NOTE: different prefix
+    #     glycine: R_EX_gly_e
+
+  # Enumeration spec. Mode determines how supplement combinations are produced.
+  enumeration:
+    mode: cartesian            # cartesian | custom | presence_absence | random
+    n_samples: 200             # used only by random / LHS
+    seed: 42                   # determinism for random / LHS
+    # max_active: 2            # optional cap for presence_absence
+    supplements:
+      glucose:
+        levels: [0.0, 2.0, 4.0]         # g/L
+      uracil:
+        binary: true                    # 0 or on_value (default 1.0)
+        on_value: 0.0224                # uracil concentration when "on", g/L
+      glycine:
+        range: { min: 0.0, max: 0.5, n: 5 }   # 5 evenly-spaced values
+
+  # Phenotype attached to the `mu_max` column.
+  phenotype:
+    mode: empty                  # empty | fba | formula
+    noise_std: 0.0
+    # formula: "0.6 * (glucose > 0) + 0.1 * uracil"
+
+  # Defaults feeding the synthetic kinetics that drive the mmol -> flux
+  # conversion in `build_flux_dataframe`. Match what the lab pipeline produces.
+  growth_kinetics_defaults:
+    max_time: 24.0               # hours
+    mv_mu_max_value: 0.5         # OD600 at max growth rate
+
+  # Optional output spec; consumed by `write_dataset` callers.
+  output:
+    dir: ./synthetic_out

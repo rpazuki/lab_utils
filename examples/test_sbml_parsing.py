@@ -4,6 +4,10 @@ Test SBML parsing with iML1515 E. coli model.
 This script downloads the iML1515 model from BiGG Models database
 and validates the SBML parsing functionality.
 """
+import pytest
+
+pytest.skip("Legacy manual SBML demo targets removed mapping-matrix APIs and network/download prerequisites.", allow_module_level=True)
+
 # pylint: disable=broad-except  # Test script: continue on errors to see all results
 
 import tempfile
