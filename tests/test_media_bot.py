@@ -297,3 +297,59 @@ B2,Blank,B2,2x_M9,None,230
     assert set(df["well"]) == {"A1", "B2"}
     assert "strain" in df.columns
     assert "is_blank" in df.columns
+
+
+def test_parse_protocol_metadata_section_markers_with_trailing_commas(tmp_path):
+    """Section headers with trailing commas and comma-only rows should be ignored."""
+    meta_text = """=== Experiment Data ===,,,,,,,,,
+Well,Strain,Strain Well,Media Type,Supplements,Media Volume (µL)
+A1,SLAB1,A1,2x_M9,Glucose,230
+B2,Blank,B2,2x_M9,None,230
+,,,,,,,,,
+=== Supplement and Media Map ===,,,,,,,,,
+Well,Supplement/Media,Plate
+A1,nan,Supplement reservoir
+"""
+    meta_path = tmp_path / "protocol_trailing_commas.csv"
+    meta_path.write_text(meta_text, encoding="utf-8")
+
+    df = parse_protocol_metadata(meta_path)
+
+    assert set(df["well"]) == {"A1", "B2"}
+    assert "=== Supplement and Media Map ===" not in set(df["well"])
+
+
+def test_report_ignores_section_marker_rows_in_metadata(tmp_path):
+    """report() should not treat section titles/comma-only rows as metadata wells."""
+    meta_text = """=== Experiment Data ===,,,,,,,,,
+Well,Strain,Strain Well,Media Type,Supplements,Media Volume (µL)
+A1,SLAB1,A1,2x_M9,Glucose,230
+B2,Blank,B2,2x_M9,None,230
+,,,,,,,,,
+=== Strain Map ===,,,,,,,,,
+Well,Strain
+A1,SLAB1
+"""
+    meta_path = tmp_path / "protocol_report_trailing_commas.csv"
+    meta_path.write_text(meta_text, encoding="utf-8")
+
+    meta = parse_protocol_metadata(meta_path)
+
+    raw_long = pd.DataFrame(
+        {
+            "well": ["A1", "B2"],
+            "well_row": ["A", "B"],
+            "well_col": [1, 2],
+            "content": ["Sample", "Sample"],
+            "time_label": ["0 h", "0 h"],
+            "time_h": [0.0, 0.0],
+            "time_h_int": [0, 0],
+            "time_min_int": [0, 0],
+            "time_min": [0.0, 0.0],
+            "od": [0.1, 0.2],
+        }
+    )
+
+    report_df = report(raw_long, meta)
+
+    assert report_df.empty
