@@ -370,6 +370,45 @@ def smart_join_drop_right(
     return merged
 
 
+def _write_collated_groups(
+    df: pd.DataFrame,
+    parent_folder: Path,
+    strain_col: str,
+    groupby_pattern: str | None,
+    create_output_folder: bool,
+    csv_output_file_name: str,
+) -> pd.DataFrame:
+    """Write one CSV per strain group and return a report dataframe."""
+    if strain_col not in df.columns:
+        raise ValueError(f"Column '{strain_col}' was not found in input data")
+
+    working_df = df.copy()
+    if groupby_pattern is not None:
+        working_df["_groupby_key"] = working_df[strain_col].astype(str).str.extract(f"({groupby_pattern})", expand=False)
+        groupby_col = "_groupby_key"
+    else:
+        groupby_col = strain_col
+
+    report: list[str] = []
+    grouped = working_df.groupby([groupby_col])
+    for group_key in grouped.groups:
+        group_df = grouped.get_group((group_key,)).copy()
+        if groupby_pattern is not None:
+            group_df = group_df.drop(columns=["_groupby_key"])
+
+        if create_output_folder:
+            output_folder = parent_folder / str(group_key)
+            output_folder.mkdir(exist_ok=True)
+            output_file_path = output_folder / csv_output_file_name
+        else:
+            output_file_path = parent_folder / f"{group_key}_{csv_output_file_name}"
+
+        group_df.to_csv(output_file_path, index=False)
+        report.append(str(output_file_path))
+
+    return pd.DataFrame({"output_file": report})
+
+
 def collate_by_strain(
     folders_list: list[Path],
     csv_input_file_name: str = "growth_rates.csv",
@@ -379,13 +418,13 @@ def collate_by_strain(
     groupby_pattern: str | None = r"[A-Za-z]+",
     csv_output_file_name: str = "growth_rates.csv",
 ) -> pd.DataFrame:
-    """Collate data by strain, averaging values across wells for each time point.
+    """Collate rows by strain from multiple experiment folders.
 
     Parameters
     ----------
     folders_list : list[Path]
         List of folder paths containing parsed data files
-    csv_file_name : str, optional
+    csv_input_file_name : str, optional
         Name of the CSV file to read from each folder, default 'growth_rates.csv'
     strain_col : str, optional
         Column name for strain identifiers, default 'strain'
@@ -404,46 +443,88 @@ def collate_by_strain(
     Returns
     -------
     pd.DataFrame
-        Collated DataFrame with mean values per strain and time point
+        DataFrame listing written output file paths
     """
-    assert len(folders_list) > 0, "folders_list must contain at least one folder path"
+    if len(folders_list) == 0:
+        raise ValueError("folders_list must contain at least one folder path")
+
+    folders = [Path(folder) for folder in folders_list]
     if output_dir is not None:
         parent_folder = Path(output_dir)
         parent_folder.mkdir(exist_ok=True)
     else:
-        parent_folder: Path = folders_list[0].parent
-    df = pd.read_csv(folders_list[0] / csv_input_file_name)
-    df["experiment"] = folders_list[0].name
-    for folder in folders_list[1:]:
-        if folder == output_dir:
+        parent_folder = folders[0].parent
+
+    output_dir_path = Path(output_dir) if output_dir is not None else None
+    df = pd.read_csv(folders[0] / csv_input_file_name)
+    df["experiment"] = folders[0].name
+    for folder in folders[1:]:
+        if output_dir_path is not None and folder == output_dir_path:
             continue
         df_new = pd.read_csv(folder / csv_input_file_name)
         df_new["experiment"] = folder.name
         df = pd.concat([df, df_new], ignore_index=True)
-    # Apply pattern extraction if specified
-    if groupby_pattern is not None:
-        df["_groupby_key"] = df[strain_col].astype(str).str.extract(f"({groupby_pattern})", expand=False)
-        groupby_col = "_groupby_key"
+
+    return _write_collated_groups(
+        df=df,
+        parent_folder=parent_folder,
+        strain_col=strain_col,
+        groupby_pattern=groupby_pattern,
+        create_output_folder=create_output_folder,
+        csv_output_file_name=csv_output_file_name,
+    )
+
+
+def collate_by_strain_single_file(
+    input_csv_file: str | Path,
+    strain_col: str = "strain",
+    create_output_folder: bool = True,
+    output_dir: str | Path | None = None,
+    groupby_pattern: str | None = r"[A-Za-z]+",
+    csv_output_file_name: str = "growth_rates.csv",
+) -> pd.DataFrame:
+    """Collate rows by strain from a single input CSV file.
+
+    Parameters
+    ----------
+    input_csv_file : str | Path
+        Path to the input CSV file
+    strain_col : str, optional
+        Column name for strain identifiers, default 'strain'
+    create_output_folder : bool, optional
+        Whether to create an output folder for each strain group, default True
+    output_dir : str | Path, optional
+        Directory to save collated files. If None, uses input file parent folder
+    groupby_pattern : str | None, optional
+        Regex pattern used to extract grouping key from strain values.
+        If None, groups directly by strain_col values.
+    csv_output_file_name : str, optional
+        Name of the output CSV file for each group, default 'growth_rates.csv'
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame listing written output file paths
+    """
+    input_csv_path = Path(input_csv_file)
+    if not input_csv_path.exists():
+        raise FileNotFoundError(f"Input CSV file not found: {input_csv_path}")
+
+    if output_dir is not None:
+        parent_folder = Path(output_dir)
+        parent_folder.mkdir(exist_ok=True)
     else:
-        groupby_col = strain_col
+        parent_folder = input_csv_path.parent
 
-    report = []
-    grouped = df.groupby([groupby_col])
-    for g in grouped.groups:
-        group_df = grouped.get_group((g,)).copy()
-        # Drop the temporary groupby key if it was created
-        if groupby_pattern is not None:
-            group_df = group_df.drop(columns=["_groupby_key"])
-        if create_output_folder:
-            output_folder = parent_folder / str(g)
-            output_folder.mkdir(exist_ok=True)
-            output_file_path: Path = output_folder / csv_output_file_name
-        else:
-            output_file_path: Path = parent_folder / f"{g}_{csv_output_file_name}"
-        group_df.to_csv(output_file_path, index=False)
-        report.append(str(output_file_path))
-
-    return pd.DataFrame({"output_file": report})
+    df = pd.read_csv(input_csv_path)
+    return _write_collated_groups(
+        df=df,
+        parent_folder=parent_folder,
+        strain_col=strain_col,
+        groupby_pattern=groupby_pattern,
+        create_output_folder=create_output_folder,
+        csv_output_file_name=csv_output_file_name,
+    )
 
 
 # =====================================================================
