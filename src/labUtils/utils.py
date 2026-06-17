@@ -18,12 +18,14 @@ def list_folders(path: Path) -> list[Path]:
         raise ValueError(f"Provided path is not a valid directory: {path}")
 
     folders = [item for item in path.iterdir() if item.is_dir()]
+    logging.info("Function labUtils.utils.list_folders finished successfully")
     return folders
 
 
 def read_csv(path: Path) -> pd.DataFrame:
     """Utility function to read a CSV file into a DataFrame."""
     df = pd.read_csv(path)
+    logging.info("Function labUtils.utils.read_csv finished successfully")
     return df
 
 
@@ -50,6 +52,7 @@ def load_file_mapping(file_path):
             raise ValueError("CSV file must have exactly 2 columns (metadata_file, raw_data_file)")
 
         # Convert to dictionary using first column as key, second as value
+        logging.info("Function labUtils.utils.load_file_mapping finished successfully")
         return dict(zip(df.iloc[:, 0], df.iloc[:, 1]))  # noqa: B905
 
     elif file_path.suffix.lower() in [".yaml", ".yml"]:
@@ -60,6 +63,7 @@ def load_file_mapping(file_path):
         if not isinstance(data, dict):
             raise ValueError("YAML file must contain a dictionary")
 
+        logging.info("Function labUtils.utils.load_file_mapping finished successfully")
         return data
 
     elif file_path.suffix.lower() == ".py":
@@ -76,9 +80,11 @@ def load_file_mapping(file_path):
                 if isinstance(node, ast.Assign):
                     for target in node.targets:
                         if isinstance(target, ast.Name) and target.id in ["file_pars", "file_mapping", "mapping"]:
+                            logging.info("Function labUtils.utils.load_file_mapping finished successfully")
                             return ast.literal_eval(node.value)
 
             # If no variable found, try to evaluate the entire content as a dict
+            logging.info("Function labUtils.utils.load_file_mapping finished successfully")
             return ast.literal_eval(content.strip())
 
         except (ValueError, SyntaxError) as e:
@@ -89,6 +95,7 @@ def load_file_mapping(file_path):
         try:
             with open(file_path, encoding="utf-8") as f:
                 content = f.read().strip()
+            logging.info("Function labUtils.utils.load_file_mapping finished successfully")
             return ast.literal_eval(content)
         except (ValueError, SyntaxError) as e:
             raise ValueError(f"Unsupported file format or invalid content: {e}") from e
@@ -135,6 +142,7 @@ def create_file_mapping_from_patterns(data_dir, raw_pattern, meta_pattern):
         raw_file = raw_data_files[i].name
         file_mapping[raw_file] = meta_file
 
+    logging.info("Function labUtils.utils.create_file_mapping_from_patterns finished successfully")
     return file_mapping
 
 
@@ -208,6 +216,7 @@ def build_pipeline_from_yaml(
         yaml_string = f.read()
 
     # Delegate to build_pipeline_from_yaml_string
+    logging.info("Function labUtils.utils.build_pipeline_from_yaml finished successfully")
     return build_pipeline_from_yaml_string(
         yaml_string=yaml_string,
         pipeline_name=pipeline_name,
@@ -226,6 +235,7 @@ def build_pipeline_from_lib_yaml(
 ) -> tuple[DFPipeline, dict]:
     """Build a data processing pipeline from a library YAML file."""
     yaml_path = Path(__file__).parent / "yamls" / lib_pipelines_yaml_name
+    logging.info("Function labUtils.utils.build_pipeline_from_lib_yaml finished successfully")
     return build_pipeline_from_yaml(
         yaml_path,
         pipeline_name,
@@ -275,6 +285,11 @@ def smart_join(
     >>> result = smart_join(df1, df2, on='id')
     # Result has 'status' and 'status_right' since values differ
     """
+    if len(left_df) == 0 or len(right_df) == 0:
+        logging.warning("One of the DataFrames is empty in smart_join. Returning left_df as is.")
+        logging.info("Function labUtils.utils.smart_join finished successfully")
+        return left_df.copy()
+
     # Ensure 'on' is a list
     if isinstance(on_cols, str):
         on_cols = [on_cols]
@@ -308,6 +323,7 @@ def smart_join(
     if cols_to_drop:
         merged = merged.drop(columns=cols_to_drop)
 
+    logging.info("Function labUtils.utils.smart_join finished successfully")
     return merged
 
 
@@ -353,6 +369,11 @@ def smart_join_drop_right(
     >>> result = smart_join_drop_right(df1, df2, on='id')
     # Result has only 'status' with values from df1 (['active', 'inactive'])
     """
+
+    if len(left_df) == 0 or len(right_df) == 0:
+        logging.warning("One of the DataFrames is empty in smart_join_drop_right. Returning left_df as is.")
+        logging.info("Function labUtils.utils.smart_join_drop_right finished successfully")
+        return left_df.copy()
     # Ensure 'on' is a list
     if isinstance(on_cols, str):
         on_cols = [on_cols]
@@ -367,6 +388,7 @@ def smart_join_drop_right(
     if right_suffix_cols:
         merged = merged.drop(columns=right_suffix_cols)
 
+    logging.info("Function labUtils.utils.smart_join_drop_right finished successfully")
     return merged
 
 
@@ -465,6 +487,7 @@ def collate_by_strain(
         df_new["experiment"] = folder.name
         df = pd.concat([df, df_new], ignore_index=True)
 
+    logging.info("Function labUtils.utils.collate_by_strain finished successfully")
     return _write_collated_groups(
         df=df,
         parent_folder=parent_folder,
@@ -517,6 +540,7 @@ def collate_by_strain_single_file(
         parent_folder = input_csv_path.parent
 
     df = pd.read_csv(input_csv_path)
+    logging.info("Function labUtils.utils.collate_by_strain_single_file finished successfully")
     return _write_collated_groups(
         df=df,
         parent_folder=parent_folder,
@@ -555,6 +579,7 @@ def get_compound_by_name(compound_name: str, chache: bool = True):
             logging.warning(
                 f"pubchempy did not find the compound name:'{compound_name}', cannot fetch molecular weight."
             )
+
             return None
     except ImportError as e:
         logging.warning("pubchempy not available.")
@@ -570,6 +595,7 @@ def get_compound_by_id(compound_id: str, chache: bool = True):
         from pubchempy import get_compounds
 
         if chache and compound_id in COMPOUND_CACHE_BY_CID:
+            logging.info("Function get_compound_by_id finished successfully")
             return COMPOUND_CACHE_BY_CID[compound_id]
 
         compound = get_compounds(compound_id, "cid")

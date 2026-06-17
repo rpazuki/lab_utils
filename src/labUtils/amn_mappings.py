@@ -483,6 +483,7 @@ def build_mappings(
         df_report = df_report.sort_values(by=["source", "exchange_reaction"]).reset_index(drop=True)
         logging.info(f"Final updated mapping dataframe:\n{df_report.to_string()}")
     # ===================================================================================
+    logging.info("Function build_mappings finished successfully")
     return df_mapping
 
 
@@ -639,6 +640,7 @@ def build_supplement_flux_dataframe(
     # Reorder columns: exchanges sorted, then growth rate last
     result_df = result_df[exch_cols + [growth_rate_column]]
 
+    logging.info("Function build_supplement_flux_dataframe finished successfully")
     return result_df
 
 
@@ -735,6 +737,7 @@ def build_AMN_inputs_dataframe(  # noqa: N802
     # Reorder columns: exchanges sorted, then growth rate last
     result_df = result_df[exch_cols + [growth_rate_column]]
 
+    logging.info("Function build_AMN_inputs_dataframe finished successfully")
     return result_df
 
 
@@ -827,6 +830,7 @@ def build_AMN_levels_dataframe(  # noqa: N802
             # Lowest priority: default values
             template_data[col] = [default_level, default_max_value, 0]
 
+    logging.info("Function build_AMN_levels_dataframe finished successfully")
     return pd.DataFrame(template_data)
 
 
@@ -840,6 +844,7 @@ def build_AMN_levels_for_different_levels(  # noqa: N802
     """Generate multiple AMN levels dataframes for different fixed levels and max values."""
     new_dfs = []
     if fixed_levels is None:
+        logging.info("Function build_AMN_levels_for_different_levels finished successfully")
         return new_dfs
 
     if fixed_max_values is None:
@@ -862,6 +867,7 @@ def build_AMN_levels_for_different_levels(  # noqa: N802
                     df_level.at[0, col] = level  # set level
             new_dfs.append(df_level)
 
+    logging.info("Function build_AMN_levels_for_different_levels finished successfully")
     return new_dfs
 
 
@@ -908,10 +914,12 @@ def parse_sbml_exchanges(sbml_path: str | Path) -> dict[str, str]:
                     name = name.replace("_e", "").replace("_", " ").strip()
                     mapping[name.lower()] = reaction.id
 
+                logging.info("Function parse_sbml_exchanges finished successfully")
         return mapping
 
     except ImportError:
         logging.warning("COBRApy not available, attempting XML parsing for SBML exchanges")
+        logging.info("Function parse_sbml_exchanges finished successfully")
         return _parse_sbml_exchanges_fallback(sbml_path)
 
 
@@ -1015,10 +1023,12 @@ def parse_sbml_exchange_bounds(
                 # Store as (level, max_value) tuple
                 bounds_map[reaction.id] = (default_level, max_value)
 
+        logging.debug("Function parse_sbml_exchange_bounds finished successfully")
         return bounds_map
 
     except ImportError:
         logging.warning("COBRApy not available, attempting XML parsing for SBML exchanges")
+        logging.debug("Function parse_sbml_exchange_bounds finished successfully")
         return _parse_sbml_exchange_bounds_fallback(sbml_path, default_level)
 
 
@@ -1088,6 +1098,7 @@ def load_default_iml1515_mapping() -> dict[str, str]:
     -----
     This is a curated mapping for common supplements used in E. coli experiments.
     """
+    logging.debug("Function load_default_iml1515_mapping finished successfully")
     return {
         # Sugars / Carbon sources
         "glucose": "EX_glc__D_e",
@@ -1136,6 +1147,7 @@ def load_minimal_media_exchanges() -> list[str]:
     These are components that are usually present in all media conditions
     and represent the minimal requirements for growth.
     """
+    logging.debug("Function load_minimal_media_exchanges finished successfully")
     return [
         "EX_pi_e_i",  # Phosphate
         "EX_co2_e_i",  # Carbon dioxide

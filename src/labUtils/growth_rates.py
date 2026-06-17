@@ -54,6 +54,7 @@ def transform_to_log_n_n0(
         df_transformed.loc[g.index[m], transformed_col] = log_n_n0
         df_transformed.loc[g.index[m], OD_0_col] = n0
 
+    logging.info("Function labUtils.growth_rates.transform_to_log_n_n0 finished successfully")
     return df_transformed
 
 
@@ -301,7 +302,9 @@ def fit_max_growth_rate_per_series(
         param_rows.append(row)
 
     params_df = pd.DataFrame(param_rows)
-
+    if params_df.empty:
+        logging.warning("No parameters were fitted in fit_max_growth_rate_per_series. Returning an empty DataFrame.")
+    logging.info("Function labUtils.growth_rates.fit_max_growth_rate_per_series finished successfully")
     return params_df
 
 
@@ -545,7 +548,10 @@ def fit_modified_gompertz_per_series(
         param_rows.append(row)
 
     params_df = pd.DataFrame(param_rows)
+    if params_df.empty:
+        logging.warning("No parameters were fitted in fit_modified_gompertz_per_series. Returning an empty DataFrame.")
 
+    logging.info("Function labUtils.growth_rates.fit_modified_gompertz_per_series finished successfully")
     return params_df
 
 
@@ -630,13 +636,20 @@ def predict_modified_gompertz_per_series(
         h["residual"] = h[value_col] - h["od600_fit"]
         preds_accum.append(h)
 
-    preds_df = pd.concat(preds_accum, ignore_index=True)
+    if len(preds_accum) == 0:
+        logging.warning("No predictions were generated in labUtils.growth_rates.predict_modified_gompertz_per_series. Using an empty DataFrame.")
+        preds_df = df.copy() # pd.DataFrame(columns=df.columns.tolist() + ["od600_fit", "residual"])
+        preds_df["od600_fit"] = np.nan
+        preds_df["residual"] = np.nan
+    else:
+        preds_df = pd.concat(preds_accum, ignore_index=True)
 
     if save_plot_data:
         plot_and_save(preds_df, params_df, time_col, value_col, group_cols, output_dir, standard_deviation_column)
     elif show_plots:
         plot_and_save(preds_df, params_df, time_col, value_col, group_cols, None, standard_deviation_column, save_plot=False)
 
+    logging.info("Function labUtils.growth_rates.predict_modified_gompertz_per_series finished successfully")
     return preds_df
 
 
@@ -789,6 +802,8 @@ def plot_single_series(
         logging.info(f"Saved plot: {filepath}")
         plt.close()  # Close figure to free memory
 
+    logging.info("Function labUtils.growth_rates.plot_single_series finished successfully")
+
 
 def plot_and_save(
     preds_df: pd.DataFrame,
@@ -811,6 +826,11 @@ def plot_and_save(
     # Only merge the fit parameters, not metadata columns that already exist in preds_df
     fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
     params_to_merge = params_df[[col for col in fit_cols if col in params_df.columns]]
+
+    if params_df.empty:
+        logging.warning("No parameters to plot. Skipping plotting.")
+        logging.info("Function labUtils.growth_rates.plot_and_save finished successfully")
+        return
     df_combined = preds_df.merge(params_to_merge, on=group_cols, how="left")
 
     pred_col: str = "od600_fit"
@@ -843,3 +863,5 @@ def plot_and_save(
                 pred_col=pred_col,
                 save_plot=save_plot,
             )
+
+    logging.info("Function labUtils.growth_rates.plot_and_save finished successfully")

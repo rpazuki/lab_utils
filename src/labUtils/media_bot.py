@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import logging
 import csv
 import re
 from io import StringIO
@@ -41,8 +42,10 @@ def find_header_row(lines):
     for i, line in enumerate(lines):
         norm = re.sub(r"\s*,\s*", ",", line.strip()).lower()
         if norm.startswith("well row,well col,content,raw data"):
+            logging.info("Function labUtils.media_bot.find_header_row finished successfully")
             return i
         if norm.startswith("well,content,raw data"):
+            logging.info("Function labUtils.media_bot.find_header_row finished successfully")
             return i
     raise ValueError("Could not find the data header row (Well Row,Well Col,Content,...) in the raw CSV.")
 
@@ -187,6 +190,7 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
 
     # Sort by well then time
     long_df = long_df.sort_values(["well_row", "well_col", "time_min"], kind="stable").reset_index(drop=True)
+    logging.info("Function labUtils.media_bot.parse_raw_CLARIOstar_export finished successfully")
     return long_df
 
 
@@ -209,6 +213,7 @@ def split_sections(meta_text: str):
         title = _normalize_marker_line(lines[s]).strip("= ").strip()
         block = [ln for ln in lines[s + 1 : e] if not _is_section_marker(ln)]
         sections[title] = "\n".join(block)
+    logging.info("Function labUtils.media_bot.split_sections finished successfully")
     return sections
 
 
@@ -320,6 +325,7 @@ def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
         .reset_index(drop=True)
     )
     tidy["is_blank"] = tidy["strain"].str.lower().eq("blank")
+    logging.info("Function labUtils.media_bot.parse_protocol_metadata finished successfully")
     return tidy
 
 
@@ -380,6 +386,7 @@ def parse(raw_data: pd.DataFrame | Path, meta_data: pd.DataFrame | Path, value_c
     ]
     ordered_cols = [c for c in ordered_cols if c in df.columns]
     df = df[ordered_cols].copy()
+    logging.info("Function labUtils.media_bot.parse finished successfully")
     return df
 
 
@@ -432,6 +439,7 @@ def report(
     if dup_meta:
         report_rows.append({"issue": "duplicate_wells_in_metadata", "count": int(dup_meta)})
 
+    logging.info("Function labUtils.media_bot.report finished successfully")
     return pd.DataFrame(report_rows)
 
 
@@ -455,8 +463,9 @@ def calculate_replicate_statistics_by_well(
         'well', 'well_row', 'well_col', value column, and time-related columns
     direction : str, optional
         Direction for grouping wells:
-        - "alphabetical" or "alpha": Group wells along rows (e.g., A1, A2, A3)
-        - "numerical" or "num": Group wells along columns (e.g., A1, B1, C1)
+        - "alphabetical", "alpha", or "rows": Group wells along rows (e.g., A1, A2, A3)
+        - "numerical", "num", or "columns": Group wells along columns (e.g., A1, B1, C1)
+        Convention: alphabetical/rows = row direction, numerical/columns = column direction
         Default is "alphabetical"
     sample_size : int, optional
         Number of wells to group together as replicates. Default is 3
@@ -522,15 +531,15 @@ def calculate_replicate_statistics_by_well(
 
     # Validate direction parameter
     direction = direction.lower()
-    if direction not in ["alphabetical", "alpha", "numerical", "num"]:
-        raise ValueError(f"Invalid direction '{direction}'. Must be 'alphabetical'/'alpha' or 'numerical'/'num'")
+    if direction not in ["alphabetical", "alpha", "rows", "numerical", "num", "columns"]:
+        raise ValueError(f"Invalid direction '{direction}'. Must be 'alphabetical'/'alpha'/'rows' or 'numerical'/'num'/'columns'")
 
     # Validate sample_size
     if sample_size < 1:
         raise ValueError(f"sample_size must be at least 1, got {sample_size}")
 
     # Determine grouping direction
-    is_alphabetical = direction in ["alphabetical", "alpha"]
+    is_alphabetical = direction in ["alphabetical", "alpha", "rows"]
 
     # Get unique wells and sort them appropriately
     unique_wells = df_parsed[["well", "well_row", "well_col"]].drop_duplicates()
@@ -660,12 +669,13 @@ def calculate_replicate_statistics_by_well(
     for first_col in first_suffix_cols:
         stats_df = stats_df.rename(columns={first_col: first_col[:-6]})  # Remove '_first' suffix
 
+    logging.info("Function labUtils.media_bot.calculate_replicate_statistics_by_well finished successfully")
     return stats_df
 
 
 def calculate_replicate_statistics_by_custom(
     df_parsed: pd.DataFrame,
-    strain_pattern: str | None = r"[A-Za-z]+",
+    strain_pattern: str | None = r"([A-Za-z]+)",
     custom_rules: dict[str, CustomReplicateRule] | None = None,
     ddof: int = 1,
     value_column_name: str = "od",
@@ -692,7 +702,8 @@ def calculate_replicate_statistics_by_custom(
         Dictionary mapping rule names to their aggregation rules.
         Each rule can target specific strains by name or use a pattern to match multiple strains.
         Each rule dictionary can contain:
-        - 'direction': "alphabetical"/"alpha" or "numerical"/"num" (required)
+        - 'direction': "alphabetical"/"alpha"/"rows" or "numerical"/"num"/"columns" (required).
+          Convention: alphabetical/rows = row direction, numerical/columns = column direction
         - 'sample_size': int >= 1 (optional for pattern rules)
         - 'pattern': str, optional regex pattern to match strain names
 
@@ -811,17 +822,21 @@ def calculate_replicate_statistics_by_custom(
 
     if not custom_rules:
         # Return empty DataFrame with expected columns
+        logging.info("Function calculate_replicate_statistics_by_custom finished successfully")
         return pd.DataFrame(columns=output_columns)
 
     # Create a copy to avoid modifying the original
     df_with_groups = df_parsed.copy()
 
+    logging.info(f"strain_pattern: {strain_pattern}")
     # Apply global pattern extraction if specified
     if strain_pattern is not None:
-        extracted = df_with_groups["strain"].astype(str).str.extract(f"({strain_pattern})", expand=True)
+        extracted = df_with_groups["strain"].astype(str).str.extract(f"{strain_pattern}", expand=True)
         # Use the first captured group if there are multiple
         if isinstance(extracted, pd.DataFrame):
-            df_with_groups["strain_group"] = extracted.iloc[:, 0]
+            # join the columns of the extracted DataFrame into a single string for each row
+            df_with_groups["strain_group"] = extracted.apply(lambda row: "".join(row.dropna().astype(str)), axis=1)
+            # df_with_groups["strain_group"] = extracted.iloc[:, 0]
         else:
             df_with_groups["strain_group"] = extracted
     else:
@@ -834,9 +849,9 @@ def calculate_replicate_statistics_by_custom(
 
     # Build a list of rule applications to process and track conflicts across rules.
     unique_strains = [str(strain) for strain in df_with_groups["strain_group"].dropna().unique()]
+    logging.info(f"Unique strains: {unique_strains}")
     assigned_strains: dict[str, str] = {}
     rules_to_process: list[tuple[str, CustomReplicateRule, list[str], bool]] = []
-
     for rule_key, rules in custom_rules.items():
         pattern_str = rules.get("pattern")
         use_full_direction_groups = pattern_str is not None and rules.get("sample_size") is None
@@ -854,7 +869,6 @@ def calculate_replicate_statistics_by_custom(
 
             # Find all strain_groups matching this pattern
             matching_strains = [strain for strain in unique_strains if pattern.search(strain)]
-
             for strain in matching_strains:
                 if strain in assigned_strains:
                     raise ValueError(
@@ -862,7 +876,7 @@ def calculate_replicate_statistics_by_custom(
                         f"Please ensure each strain matches at most one pattern."
                     )
                 assigned_strains[strain] = rule_key
-
+            logging.info(f"Rule '{rule_key}' matches strains: {matching_strains} pattern_str: {pattern_str} sample_size: {rules.get('sample_size')}")
             if use_full_direction_groups:
                 rules_to_process.append((rule_key, rules, matching_strains, True))
             else:
@@ -880,7 +894,6 @@ def calculate_replicate_statistics_by_custom(
 
     # Process each strain according to its custom rules
     all_results = []
-
     for output_strain, rules, strain_names, use_full_direction_groups in rules_to_process:
         # Filter data for this rule application
         strain_df = df_with_groups[df_with_groups["strain_group"].isin(strain_names)].copy()
@@ -897,14 +910,14 @@ def calculate_replicate_statistics_by_custom(
 
         # Validate direction
         direction = direction_raw.lower()
-        if direction not in ["alphabetical", "alpha", "numerical", "num"]:
+        if direction not in ["alphabetical", "alpha", "rows", "numerical", "num", "columns"]:
             raise ValueError(
                 f"Invalid direction '{direction}' for strain '{output_strain}'. "
-                f"Must be 'alphabetical'/'alpha' or 'numerical'/'num'"
+                f"Must be 'alphabetical'/'alpha'/'rows' or 'numerical'/'num'/'columns'"
             )
 
         # Determine grouping direction
-        is_alphabetical = direction in ["alphabetical", "alpha"]
+        is_alphabetical = direction in ["alphabetical", "alpha", "rows"]
 
         # Get unique wells and sort them appropriately
         unique_wells = strain_df[["well", "well_row", "well_col"]].drop_duplicates()
@@ -1015,10 +1028,11 @@ def calculate_replicate_statistics_by_custom(
             stats_df = stats_df.drop(columns=["group_num"])
 
         all_results.append(stats_df)
-
+    logging.info(f"Processed {len(all_results)} strain groups with custom rules.")
     # Concatenate all results
     if not all_results:
         # Return empty DataFrame with expected columns
+        logging.info("Function labUtils.media_bot.calculate_replicate_statistics_by_custom finished successfully")
         return pd.DataFrame(columns=output_columns)
 
     final_df = pd.concat(all_results, ignore_index=True)
@@ -1052,4 +1066,7 @@ def calculate_replicate_statistics_by_custom(
     for first_col in first_suffix_cols:
         final_df = final_df.rename(columns={first_col: first_col[:-6]})  # Remove '_first' suffix
 
+
+
+    logging.info("Function labUtils.media_bot.calculate_replicate_statistics_by_custom finished successfully")
     return final_df
