@@ -549,11 +549,13 @@ def calculate_replicate_statistics_by_well(
         unique_wells = unique_wells.sort_values(["well_row", "well_col"]).reset_index(drop=True)
         n_positions = len(unique_wells["well_row"].unique())
         position_name = "rows"
+        logging.info(f"Grouping wells along rows (alphabetical direction). Total unique rows: {n_positions}")
     else:
         # Sort by column then row (A1, B1, C1, ..., A2, B2, C2, ...)
         unique_wells = unique_wells.sort_values(["well_col", "well_row"]).reset_index(drop=True)
         n_positions = len(unique_wells["well_col"].unique())
         position_name = "columns"
+        logging.info(f"Grouping wells along columns (numerical direction). Total unique columns: {n_positions}")
 
     # Check if divisible by sample_size
     if len(unique_wells) % sample_size != 0:
@@ -890,7 +892,9 @@ def calculate_replicate_statistics_by_custom(
                     f"Please ensure each strain matches at most one pattern."
                 )
             assigned_strains[rule_key] = rule_key
-            rules_to_process.append((rule_key, rules, [rule_key], False))
+            use_full_direction_groups = rules.get("sample_size") is None
+            rules_to_process.append((rule_key, rules, [rule_key], use_full_direction_groups))
+            logging.info(f"Rule '{rule_key}' matches exact strain: {rule_key} sample_size: {rules.get('sample_size')}")
 
     # Process each strain according to its custom rules
     all_results = []
@@ -921,19 +925,22 @@ def calculate_replicate_statistics_by_custom(
 
         # Get unique wells and sort them appropriately
         unique_wells = strain_df[["well", "well_row", "well_col"]].drop_duplicates()
-
+        logging.info(f"Processing strain '{output_strain}' with {len(unique_wells)} unique wells\n"
+                     f"\t\t\t\t\t Direction: {direction}, use_full_direction_groups: {use_full_direction_groups}")
         if is_alphabetical:
             # Sort by row then column (A1, A2, A3, ..., B1, B2, B3, ...)
             unique_wells = unique_wells.sort_values(["well_row", "well_col"]).reset_index(drop=True)
             n_positions = len(unique_wells["well_row"].unique())
             position_name = "rows"
             grouping_col = "well_row"
+            logging.info(f"Grouping wells along rows (alphabetical direction). Total unique rows: {n_positions}")
         else:
             # Sort by column then row (A1, B1, C1, ..., A2, B2, C2, ...)
             unique_wells = unique_wells.sort_values(["well_col", "well_row"]).reset_index(drop=True)
             n_positions = len(unique_wells["well_col"].unique())
             position_name = "columns"
             grouping_col = "well_col"
+            logging.info(f"Grouping wells along columns (numerical direction). Total unique columns: {n_positions}")
 
         if use_full_direction_groups:
             # Group full rows/columns so replicate counts can vary across positions.

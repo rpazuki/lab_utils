@@ -57,6 +57,8 @@ Each entry in `custom_rules` can be either:
 
 - Exact-name rule (no `pattern` key):
     - Rule key is treated as an exact `strain_group` value.
+    - If `sample_size` is provided, uses fixed-size blocks.
+    - If `sample_size` is omitted or `None`, uses full-direction grouping (no block constraints).
 
 - Pattern rule (has `pattern` key):
     - `pattern` regex is matched against all unique `strain_group` values.
@@ -68,12 +70,13 @@ Validation behavior:
 - If one strain matches multiple rules, `ValueError` is raised.
 - `direction` must be `alphabetical/alpha/rows/numerical/num/columns`.
 - In fixed-size mode, `sample_size` must be `int >= 1`.
+- Full-direction mode (when `sample_size` is `None` or missing) skips divisibility checks.
 
 ## 5) Core Interaction: `pattern` vs `direction` vs `sample_size`
 
 This is the most important part.
 
-### Scenario A: Exact rule (no `pattern`)
+### Scenario A: Exact rule with fixed-size grouping (no `pattern`, with `sample_size`)
 
 Rule example:
 
@@ -85,9 +88,25 @@ Behavior:
 
 - Matches only `strain_group == "control"`.
 - Uses fixed-size grouping by `sample_size`.
-- If `sample_size` is omitted, default is `3`.
 - If well count is not divisible by `sample_size`, raises `ValueError`.
 - Output `strain` column value is the rule key (`"control"`).
+
+### Scenario A2: Exact rule with full-direction grouping (no `pattern`, no `sample_size`)
+
+Rule example:
+
+```python
+"control": {"direction": "alphabetical"}
+```
+
+Behavior:
+
+- Matches only `strain_group == "control"`.
+- Uses full-direction grouping (groups by full row or column, not fixed-size blocks).
+- Replicate counts can vary between groups.
+- No divisibility check is needed.
+- Output `strain` column value is the rule key (`"control"`).
+- Useful when a specific strain should be grouped by directional layout without fixed block constraints.
 
 ### Scenario B: Pattern rule with `sample_size` provided
 
@@ -135,10 +154,12 @@ Behavior is the same as Scenario C (full-direction grouping), because the code c
 
 | `strain_pattern` | Rule Type | `sample_size` in rule | Matching Target | Grouping Method | Output `strain` value |
 |---|---|---|---|---|---|
-| `None` | Exact | provided/missing | Original `strain` | Fixed-size blocks | Rule key |
-| `None` | Pattern | provided (or defaulted by explicit int) | Original `strain` | Fixed-size blocks per matched strain | Matched strain name |
+| `None` | Exact | provided (e.g., `3`) | Original `strain` | Fixed-size blocks | Rule key |
+| `None` | Exact | missing or `None` | Original `strain` | Full row/column groups | Rule key |
+| `None` | Pattern | provided (or defaulted) | Original `strain` | Fixed-size blocks per matched strain | Matched strain name |
 | `None` | Pattern | missing or `None` | Original `strain` | Full row/column groups | Rule key |
-| Regex string | Exact | provided/missing | Extracted `strain_group` | Fixed-size blocks | Rule key |
+| Regex string | Exact | provided (e.g., `3`) | Extracted `strain_group` | Fixed-size blocks | Rule key |
+| Regex string | Exact | missing or `None` | Extracted `strain_group` | Full row/column groups | Rule key |
 | Regex string | Pattern | provided | Extracted `strain_group` | Fixed-size blocks per matched strain | Matched extracted strain |
 | Regex string | Pattern | missing or `None` | Extracted `strain_group` | Full row/column groups | Rule key |
 
@@ -170,12 +191,22 @@ Notes:
 
 ## 9) Minimal Examples
 
-Exact rules only:
+Exact rules with fixed-size grouping:
 
 ```python
 custom_rules = {
         "control": {"direction": "alphabetical", "sample_size": 3},
         "blank": {"direction": "alphabetical", "sample_size": 1},
+}
+stats = calculate_replicate_statistics_by_custom(df, strain_pattern=None, custom_rules=custom_rules)
+```
+
+Exact rules with full-direction grouping (no fixed blocks):
+
+```python
+custom_rules = {
+        "control": {"direction": "alphabetical"},
+        "experimental": {"direction": "numerical"},
 }
 stats = calculate_replicate_statistics_by_custom(df, strain_pattern=None, custom_rules=custom_rules)
 ```

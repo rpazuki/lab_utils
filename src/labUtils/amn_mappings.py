@@ -914,12 +914,12 @@ def parse_sbml_exchanges(sbml_path: str | Path) -> dict[str, str]:
                     name = name.replace("_e", "").replace("_", " ").strip()
                     mapping[name.lower()] = reaction.id
 
-                logging.info("Function parse_sbml_exchanges finished successfully")
+                # logging.info("Function labUtils.amn_mappings.parse_sbml_exchanges finished successfully")
         return mapping
 
     except ImportError:
         logging.warning("COBRApy not available, attempting XML parsing for SBML exchanges")
-        logging.info("Function parse_sbml_exchanges finished successfully")
+        logging.info("Function parse_sbml_exchanges finished with error: COBRApy not available, using fallback XML parsing")
         return _parse_sbml_exchanges_fallback(sbml_path)
 
 
