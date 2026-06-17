@@ -29,6 +29,17 @@ def read_csv(path: Path) -> pd.DataFrame:
     return df
 
 
+def read_file(path: Path) -> pd.DataFrame:
+    """Read a CSV or Excel file (.xlsx/.xls) into a DataFrame."""
+    path = Path(path)
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        df = pd.read_excel(path)
+    else:
+        df = pd.read_csv(path)
+    logging.info("Function labUtils.utils.read_file finished successfully")
+    return df
+
+
 def load_file_mapping(file_path):
     """
     Load file mapping from various formats (CSV, Python dict, YAML).
@@ -52,6 +63,13 @@ def load_file_mapping(file_path):
             raise ValueError("CSV file must have exactly 2 columns (metadata_file, raw_data_file)")
 
         # Convert to dictionary using first column as key, second as value
+        logging.info("Function labUtils.utils.load_file_mapping finished successfully")
+        return dict(zip(df.iloc[:, 0], df.iloc[:, 1]))  # noqa: B905
+
+    elif file_path.suffix.lower() in (".xlsx", ".xls"):
+        df = pd.read_excel(file_path)
+        if len(df.columns) != 2:
+            raise ValueError("Excel file must have exactly 2 columns (metadata_file, raw_data_file)")
         logging.info("Function labUtils.utils.load_file_mapping finished successfully")
         return dict(zip(df.iloc[:, 0], df.iloc[:, 1]))  # noqa: B905
 

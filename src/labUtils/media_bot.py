@@ -47,7 +47,12 @@ def find_header_row(lines):
         if norm.startswith("well,content,raw data"):
             logging.info("Function labUtils.media_bot.find_header_row finished successfully")
             return i
-    raise ValueError("Could not find the data header row (Well Row,Well Col,Content,...) in the raw CSV.")
+    raise ValueError("Could not find the data header row (Well Row,Well Col,Content,...) in the file.")
+
+
+def _line_is_nonempty(line: str) -> bool:
+    """Return True if a CSV line (or an Excel row joined as CSV) has any content."""
+    return bool(line.replace(",", "").strip())
 
 
 _time_pat = re.compile(r"^\s*(?:(?P<h>\d+)\s*h)?\s*(?:(?P<m>\d+)\s*min)?\s*$")
@@ -85,16 +90,21 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
      pd.DataFrame
         Tidy long format dataframe with processed time labels and well information
     """
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    lines = text.splitlines()
-    hdr_idx = find_header_row(lines)
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        df_raw = pd.read_excel(path, header=None, dtype=str).fillna("")
+        lines = [",".join(str(c) for c in row) for row in df_raw.values.tolist()]
+        hdr_idx = find_header_row(lines)
+        rows = df_raw.iloc[hdr_idx:].values.tolist()
+    else:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        lines = text.splitlines()
+        hdr_idx = find_header_row(lines)
+        block = "\n".join(lines[hdr_idx:])
+        rows = list(csv.reader(StringIO(block)))
 
-    # Read the block starting at the header row
-    block = "\n".join(lines[hdr_idx:])
-    rows = list(csv.reader(StringIO(block)))
     rows = [r for r in rows if any(str(cell).strip() != "" for cell in r)]
     if not rows:
-        raise ValueError("No rows found after the detected header row in the raw CSV.")
+        raise ValueError("No rows found after the detected header row.")
     max_cols = max(len(r) for r in rows)
     rows = [r + [""] * (max_cols - len(r)) for r in rows]
     df = pd.DataFrame(rows)
@@ -133,7 +143,7 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
     # Fallback: parse the raw second line directly if needed
     n_data_cols = df.shape[1] - raw_data_idx
     if len(times) < n_data_cols:
-        next_non_empty_idx = next((i for i in range(hdr_idx + 1, len(lines)) if lines[i].strip() != ""), None)
+        next_non_empty_idx = next((i for i in range(hdr_idx + 1, len(lines)) if _line_is_nonempty(lines[i])), None)
         if next_non_empty_idx is None:
             raise ValueError("Could not find a non-empty time-label row after the data header row.")
         second_line = lines[next_non_empty_idx]

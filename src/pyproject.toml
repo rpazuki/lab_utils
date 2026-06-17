@@ -15,4 +15,5 @@ dependencies = [
     "addict",
     "statsmodels",
     "matplotlib",
+    "openpyxl",
 ]
