@@ -266,6 +266,9 @@ def build_flux_dataframe(
     supp_mappings = valid_mappings.loc[valid_mappings["source"] == MediumSource.SUPPLEMENT.value]
 
     # Pre-compute per-supplement MW (override > back-derived from mapping).
+    # mmol_concentration is also stored so that entries with a direct mmol_per_liter /
+    # mol_per_liter override (where mass_per_litre may be 0 and MW cannot be derived)
+    # can still produce a non-zero flux.
     supp_meta: dict[str, dict[str, Any]] = {}
     for _, mrow in supp_mappings.iterrows():
         name = str(mrow["name"]).lower()
@@ -276,6 +279,7 @@ def build_flux_dataframe(
         supp_meta[name] = {
             "exchange_reaction": mrow["exchange_reaction"],
             "molecular_weight": mw,
+            "mmol_concentration": float(mrow.get("mmol_concentration", 0.0)),
         }
         if mrow["iupac_name"]:
             supp_meta[str(mrow["iupac_name"]).lower()] = supp_meta[name]
@@ -309,7 +313,13 @@ def build_flux_dataframe(
                 # supplement column that maps onto a MEDIUM or FIXED exchange and is
                 # therefore already accounted for via the template.
                 continue
-            flux = _flux_from_concentration(mass, meta["molecular_weight"], max_time, od_at_gr)
+            if meta.get("molecular_weight") is None and meta.get("mmol_concentration", 0.0) > 0.0:
+                # MW unavailable but a direct mmol override was set (mmol_per_liter /
+                # mol_per_liter in the mapping).  Use the fixed mmol for any active condition.
+                mmol = meta["mmol_concentration"]
+                flux = mmol / (max_time * od_at_gr) if max_time > 0 and od_at_gr > 0 else 0.0
+            else:
+                flux = _flux_from_concentration(mass, meta["molecular_weight"], max_time, od_at_gr)
             new_row[meta["exchange_reaction"]] = flux
         rows.append(new_row)
 

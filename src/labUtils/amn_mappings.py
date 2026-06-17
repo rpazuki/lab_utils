@@ -261,17 +261,24 @@ def build_mappings(
         # Extract and convert mass_per_litre to mmol if requested
         mass_per_litre = properties.get("mass_per_litre") if isinstance(properties, dict) else 0.0
         row["mass_per_litre"] = float(mass_per_litre)  # type: ignore
-        if "pubchem_name" in properties:
-            molecular_weight = find_molecular_weight(properties["pubchem_name"])  # type: ignore
-        elif "pubchem_id" in properties:
-            molecular_weight = find_molecular_weight_by_id(properties["pubchem_id"])  # type: ignore
-        elif "iupac_name" in properties and properties["iupac_name"] != "":
-            molecular_weight = find_molecular_weight(properties["iupac_name"])  # type: ignore
+        # mmol_per_liter / mol_per_liter override the PubChem-derived calculation entirely.
+        # Precedence: mmol_per_liter > mol_per_liter > mass_per_litre → MW lookup.
+        if "mmol_per_liter" in properties:
+            row["mmol_concentration"] = float(properties["mmol_per_liter"])  # type: ignore
+        elif "mol_per_liter" in properties:
+            row["mmol_concentration"] = float(properties["mol_per_liter"]) * 1000.0  # type: ignore
         else:
-            molecular_weight = find_molecular_weight(row["name"])
-        mol = g_to_mol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0  # type: ignore
-        mmol = mol * 1000.0  # convert mol to mmol
-        row["mmol_concentration"] = mmol  # type: ignore
+            if "pubchem_name" in properties:
+                molecular_weight = find_molecular_weight(properties["pubchem_name"])  # type: ignore
+            elif "pubchem_id" in properties:
+                molecular_weight = find_molecular_weight_by_id(properties["pubchem_id"])  # type: ignore
+            elif "iupac_name" in properties and properties["iupac_name"] != "":
+                molecular_weight = find_molecular_weight(properties["iupac_name"])  # type: ignore
+            else:
+                molecular_weight = find_molecular_weight(row["name"])
+            mol = g_to_mol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0  # type: ignore
+            mmol = mol * 1000.0  # convert mol to mmol
+            row["mmol_concentration"] = mmol  # type: ignore
 
         # Extract flux_upper_bound if present
         if "flux_upper_bound" in properties and isinstance(properties, dict):
