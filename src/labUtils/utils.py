@@ -13,6 +13,7 @@ from labUtils.pipelines import DFPipeline, build_pipeline_from_yaml_string
 
 def list_folders(path: Path) -> list[Path]:
     """List all folders in the given directory path."""
+    logging.info("Function labUtils.utils.list_folders is started")
     path = Path(path)
     if not path.exists() or not path.is_dir():
         raise ValueError(f"Provided path is not a valid directory: {path}")
@@ -24,6 +25,7 @@ def list_folders(path: Path) -> list[Path]:
 
 def read_csv(path: Path) -> pd.DataFrame:
     """Utility function to read a CSV file into a DataFrame."""
+    logging.info("Function labUtils.utils.read_csv is started")
     df = pd.read_csv(path)
     logging.info("Function labUtils.utils.read_csv finished successfully")
     return df
@@ -31,6 +33,7 @@ def read_csv(path: Path) -> pd.DataFrame:
 
 def read_file(path: Path) -> pd.DataFrame:
     """Read a CSV or Excel file (.xlsx/.xls) into a DataFrame."""
+    logging.info("Function labUtils.utils.read_file is started")
     path = Path(path)
     if path.suffix.lower() in (".xlsx", ".xls"):
         df = pd.read_excel(path)
@@ -50,6 +53,7 @@ def load_file_mapping(file_path):
     Returns:
         dict: Dictionary mapping metadata files to raw data files
     """
+    logging.info("Function labUtils.utils.load_file_mapping is started")
     file_path = Path(file_path)
 
     if not file_path.exists():
@@ -131,6 +135,7 @@ def create_file_mapping_from_patterns(data_dir, raw_pattern, meta_pattern):
     Returns:
         dict: Dictionary mapping metadata files to raw data files
     """
+    logging.info("Function labUtils.utils.create_file_mapping_from_patterns is started")
     data_dir = Path(data_dir)
 
     # Find all files matching patterns
@@ -225,6 +230,7 @@ def build_pipeline_from_yaml(
         )
         result = pipeline()
     """
+    logging.info("Function labUtils.utils.build_pipeline_from_yaml is started")
     # Load YAML file
     yaml_path = Path(yaml_path)
     if not yaml_path.exists():
@@ -252,8 +258,9 @@ def build_pipeline_from_lib_yaml(
     process_arg_mapping: dict[str, dict[str, str]] | None = None,
 ) -> tuple[DFPipeline, dict]:
     """Build a data processing pipeline from a library YAML file."""
+    logging.info("Function labUtils.utils.build_pipeline_from_lib_yaml is started")
     yaml_path = Path(__file__).parent / "yamls" / lib_pipelines_yaml_name
-    logging.info("Function labUtils.utils.build_pipeline_from_lib_yaml finished successfully")
+
     return build_pipeline_from_yaml(
         yaml_path,
         pipeline_name,
@@ -303,6 +310,7 @@ def smart_join(
     >>> result = smart_join(df1, df2, on='id')
     # Result has 'status' and 'status_right' since values differ
     """
+    logging.info("Function labUtils.utils.smart_join is started")
     if len(left_df) == 0 or len(right_df) == 0:
         logging.warning("One of the DataFrames is empty in smart_join. Returning left_df as is.")
         logging.info("Function labUtils.utils.smart_join finished successfully")
@@ -387,7 +395,7 @@ def smart_join_drop_right(
     >>> result = smart_join_drop_right(df1, df2, on='id')
     # Result has only 'status' with values from df1 (['active', 'inactive'])
     """
-
+    logging.info("Function labUtils.utils.smart_join_drop_right is started")
     if len(left_df) == 0 or len(right_df) == 0:
         logging.warning("One of the DataFrames is empty in smart_join_drop_right. Returning left_df as is.")
         logging.info("Function labUtils.utils.smart_join_drop_right finished successfully")
@@ -485,6 +493,7 @@ def collate_by_strain(
     pd.DataFrame
         DataFrame listing written output file paths
     """
+    logging.info("Function labUtils.utils.collate_by_strain is started")
     if len(folders_list) == 0:
         raise ValueError("folders_list must contain at least one folder path")
 
@@ -547,6 +556,7 @@ def collate_by_strain_single_file(
     pd.DataFrame
         DataFrame listing written output file paths
     """
+    logging.info("Function labUtils.utils.collate_by_strain_single_file is started")
     input_csv_path = Path(input_csv_file)
     if not input_csv_path.exists():
         raise FileNotFoundError(f"Input CSV file not found: {input_csv_path}")

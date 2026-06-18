@@ -39,6 +39,7 @@ class CustomReplicateRule(TypedDict, total=False):
 # ---------- helpers ----------
 def find_header_row(lines):
     """Locate the measurement table header in a BMG CLARIOstar export."""
+    logging.info("Function labUtils.media_bot.find_header_row is started")
     for i, line in enumerate(lines):
         norm = re.sub(r"\s*,\s*", ",", line.strip()).lower()
         if norm.startswith("well row,well col,content,raw data"):
@@ -90,6 +91,7 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
      pd.DataFrame
         Tidy long format dataframe with processed time labels and well information
     """
+    logging.info("Function labUtils.media_bot.parse_raw_CLARIOstar_export is started")
     if path.suffix.lower() in (".xlsx", ".xls"):
         df_raw = pd.read_excel(path, header=None, dtype=str).fillna("")
         lines = [",".join(str(c) for c in row) for row in df_raw.values.tolist()]
@@ -206,6 +208,7 @@ def parse_raw_CLARIOstar_export(path: Path, value_column_name: str = "od") -> pd
 
 def split_sections(meta_text: str):
     """Split the custom metadata file into sections keyed by the === Title === line."""
+    logging.info("Function labUtils.media_bot.split_sections is started")
     sections = {}
 
     def _normalize_marker_line(line: str) -> str:
@@ -229,6 +232,7 @@ def split_sections(meta_text: str):
 
 def parse_protocol_metadata(meta_path: Path) -> pd.DataFrame:
     """Parse the '=== Experiment Data ===' section as a DataFrame and tidy column names."""
+    logging.info("Function labUtils.media_bot.parse_protocol_metadata is started")
     text = meta_path.read_text(encoding="utf-8", errors="ignore")
     sections = split_sections(text)
     df = None
@@ -358,6 +362,7 @@ def parse(raw_data: pd.DataFrame | Path, meta_data: pd.DataFrame | Path, value_c
     pd.DataFrame
         Merged DataFrame with both raw data and metadata
     """
+    logging.info("Function labUtils.media_bot.parse is started")
     # Handle file paths if provided
     if isinstance(raw_data, Path):
         raw_long = parse_raw_CLARIOstar_export(raw_data, value_column_name=value_column_name)
@@ -421,6 +426,7 @@ def report(
     pd.DataFrame
         Report of any issues found in the data
     """
+    logging.info("Function labUtils.media_bot.report is started")
     # Handle file paths if provided
     if isinstance(raw_data, Path):
         raw_long = parse_raw_CLARIOstar_export(raw_data, value_column_name=value_column_name)
@@ -533,6 +539,7 @@ def calculate_replicate_statistics_by_well(
     - NaN values in the value column are excluded from mean and std calculations
     - Metadata from the first well in each group is retained in the output
     """
+    logging.info("Function labUtils.media_bot.calculate_replicate_statistics_by_well is started")
     # Validate input DataFrame
     required_cols = ["well", "well_row", "well_col", value_column_name]
     missing_cols = [col for col in required_cols if col not in df_parsed.columns]
@@ -811,6 +818,7 @@ def calculate_replicate_statistics_by_custom(
     - When using patterns without sample_size, all matching strains are combined under the
       rule name and grouped by full rows or columns, depending on direction
     """
+    logging.info("Function labUtils.media_bot.calculate_replicate_statistics_by_custom is started")
     # Validate input DataFrame
     required_cols = ["well", "well_row", "well_col", "strain", value_column_name]
     missing_cols = [col for col in required_cols if col not in df_parsed.columns]

@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 import cobra
 
@@ -9,6 +11,7 @@ from labUtils.utils import smart_join_drop_right
 # Helper functions
 def load_model(path):
     """Load a COBRA model from SBML or JSON."""
+    logging.info(f"Loading COBRA model from {path}")
     if path.endswith(".xml") or path.endswith(".sbml"):
         return cobra.io.read_sbml_model(path)
     elif path.endswith(".json"):
@@ -28,6 +31,7 @@ def load_fba_data(per_strain: bool = True,
                 datasource_path:str = "H:/ROBOT_SCIENTIST/E_coli/Growth_rates/2025-10-31-27/processed",
                 levels_csv_file:str = "df_AMN_actual_medium_level.csv",
                 ) -> tuple[pd.DataFrame, list[str], list[str], list[str], pd.DataFrame]:
+    logging.info("Function load_fba_data is started")
     df_data, _,df_levels, df_prediction_data = load_experiment_data(per_strain=per_strain,
                                                                     replication=replication,
                                                                     strain=strain,
@@ -62,23 +66,30 @@ def load_fba_data(per_strain: bool = True,
     # Does not work on post_replicates, because predictions is per well, but the growth_rate is per group
     df_prediction_data = smart_join_drop_right(df_prediction_data, df_data, on_cols=[well_column, "experiment"])
 
-
+    logging.info("Function load_fba_data finished successfully")
     return df_data, fixed_columns, medium_columns, supplement_columns, df_prediction_data
 
 
 def solve_fba(df:pd.DataFrame,
                      model:cobra.Model,
-                     df_medium_columns:list,
+                     df_medium_columns:list | None = None,
                      scaled_columns:list[str] = [],
                      scale_factor:float = 1.0,
                      zero_uptake_columns:list[str] = [],
                      use_sfba:bool = False,
+                     gr_column:str = "mv_mu_max",
                      solution_column_name:str = "fba_growth",
                      solution_status_column_name:str = "fba_status",
               ) -> pd.DataFrame:
+    logging.info("Function solve_fba is started")
     df = df.copy()
     df[solution_column_name] = 0.0
     df[solution_status_column_name] = ""
+    if df_medium_columns is None:
+        df_medium_columns = [col for col in df.columns
+                             if col != solution_column_name and
+                             col != solution_status_column_name and
+                             col != gr_column]
     for _, row in df.iterrows():
         with model:
             # Set the medium according to the experimental data
@@ -106,21 +117,29 @@ def solve_fba(df:pd.DataFrame,
             else:
                 df.loc[df.index == row.name, solution_status_column_name] = solution.status
         #===============================
+    logging.info("Function solve_fba finished successfully")
     return df
 
 def solve_fba_and_flux(df:pd.DataFrame,
                      model:cobra.Model,
-                     df_medium_columns:list,
+                     df_medium_columns:list | None = None,
                      scaled_columns:list[str] = [],
                      scale_factor:float = 1.0,
                      zero_uptake_columns:list[str] = [],
                      use_sfba:bool = False,
+                     gr_column:str = "mv_mu_max",
                      solution_column_name:str = "fba_growth",
                      solution_status_column_name:str = "fba_status",
               ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    logging.info("Function solve_fba_and_flux is started")
     df = df.copy()
     df[solution_column_name] = 0.0
     df[solution_status_column_name] = ""
+    if df_medium_columns is None:
+        df_medium_columns = [col for col in df.columns
+                             if col != solution_column_name and
+                             col != solution_status_column_name and
+                             col != gr_column]
     fluxes = []
     for _, row in df.iterrows():
         with model:
@@ -153,11 +172,12 @@ def solve_fba_and_flux(df:pd.DataFrame,
         #===============================
     fluxes_df = pd.concat([flux for flux in fluxes], axis=1, ignore_index=True)
     fluxes_df = fluxes_df.transpose()
+    logging.info("Function solve_fba_and_flux finished successfully")
     return df, fluxes_df
 
 def find_fba_solutions_scaling_factor(df:pd.DataFrame,
                      model:cobra.Model,
-                     df_medium_columns:list,
+                     df_medium_columns:list | None = None,
                      scale_factor:float = 1.0,
                      zero_uptake_columns:list[str] = [],
                      use_sfba:bool = False,
@@ -167,7 +187,13 @@ def find_fba_solutions_scaling_factor(df:pd.DataFrame,
                      solution_column_name:str = "fba_growth",
                      solution_status_column_name:str = "fba_status",
               ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    logging.info("Function find_fba_solutions_scaling_factor is started")
     df = df.copy()
+    if df_medium_columns is None:
+        df_medium_columns = [col for col in df.columns
+                             if col != solution_column_name and
+                             col != solution_status_column_name and
+                             col != gr_column]
     df[solution_column_name] = 0.0
     df[solution_status_column_name] = ""
     fluxes = []
@@ -224,5 +250,6 @@ def find_fba_solutions_scaling_factor(df:pd.DataFrame,
     shadow_prices_df = pd.concat([sp for sp in shadow_prices], axis=1, ignore_index=True)
     shadow_prices_df = shadow_prices_df.transpose()
     df["scaling_factor"] = scale_factors
+    logging.info("Function find_fba_solutions_scaling_factor finished successfully")
     return df, fluxes_df, shadow_prices_df
 

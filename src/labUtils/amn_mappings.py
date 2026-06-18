@@ -58,6 +58,7 @@ def build_mappings(
     halt_on_error: bool = False,
     verbose: bool = False,
 ) -> pd.DataFrame:
+    logging.info("Function build_mappings is started")
     # ===================================================================================
     ## Level 1: Base mapping from supplement_to_exchange_map
     # Create a dataframe from organism's supplement to exchange mapping
@@ -247,9 +248,11 @@ def build_mappings(
                     f"Could not found a match for name:'{row['name']}' (iupac_name:'{row['iupac_name']}').",
                     halt_on_error=halt_on_not_found,
                 )
+        logging.info("Function update_mapping_df_by_row finished successfully")
         return df_mapping
 
     def create_new_row(name, properties):
+
         row = {"name": name.strip().lower()}
         # Extract exchange_name from nested dict
         exchange_name: str = properties.get("exchange_name", "")
@@ -508,6 +511,7 @@ def build_supplement_flux_dataframe(
     separator: str = ";",
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
+    logging.info("Function build_supplement_flux_dataframe is started")
     # ==================================================================================
     # the precedence order is SUPPLEMENT > MEDIUM > FIXED, and alll UNSTATED are ignored
     #
@@ -660,6 +664,7 @@ def build_AMN_inputs_dataframe(  # noqa: N802
     separator: str = ";",
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
+    logging.info("Function build_AMN_inputs_dataframe is started")
     # ==================================================================================
     # the precedence order is SUPPLEMENT > MEDIUM > FIXED, and alll UNSTATED are ignored
     #
@@ -760,6 +765,7 @@ def build_AMN_levels_dataframe(  # noqa: N802
     custom_bounds: dict[str, tuple[int, int]] | None = None,
     exchange_suffix: str | None = None,
 ) -> pd.DataFrame:
+    logging.info("Function build_AMN_levels_dataframe is started")
     def trim(item: str) -> str:
         if not exchange_suffix:
             return item
@@ -849,6 +855,7 @@ def build_AMN_levels_for_different_levels(  # noqa: N802
     default_max_value: int = 20,
 ):
     """Generate multiple AMN levels dataframes for different fixed levels and max values."""
+    logging.info("Function build_AMN_levels_for_different_levels is started")
     new_dfs = []
     if fixed_levels is None:
         logging.info("Function build_AMN_levels_for_different_levels finished successfully")
@@ -902,6 +909,7 @@ def parse_sbml_exchanges(sbml_path: str | Path) -> dict[str, str]:
     >>> mapping = parse_sbml_exchanges("iML1515.xml")
     >>> print(mapping["glucose"])  # EX_glc__D_e
     """
+    logging.info("Function parse_sbml_exchanges is started")
     try:
         import cobra
 
@@ -1012,6 +1020,7 @@ def parse_sbml_exchange_bounds(
     ...     sbml_bounds=bounds
     ... )
     """
+    logging.info("Function parse_sbml_exchange_bounds is started")
     try:
         import cobra
 
