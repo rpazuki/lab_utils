@@ -37,6 +37,7 @@ def transform_to_log_n_n0(
     OD_0_col: str = "n0",
 ) -> pd.DataFrame:
     """Transforms the value_col to log(n/n0) per group defined by group_cols."""
+    logging.info("Function labUtils.growth_rates.transform_to_log_n_n0 started")
     df_transformed = df.copy()
     df_transformed[transformed_col] = np.nan  # Initialize the new column with NaNs
     df_transformed[OD_0_col] = np.nan  # Initialize the new column with NaNs
@@ -105,6 +106,7 @@ def fit_max_growth_rate_per_series(
         - message: Status or error message
         - Metadata columns from original data
     """
+    logging.info("Function labUtils.growth_rates.fit_max_growth_rate_per_series started")
 
     def curve_smoothing(y):
         """Simple moving average smoothing with window size smooth_window_size
@@ -356,7 +358,7 @@ def fit_modified_gompertz_per_series(
         - message: Status or error message
         - Metadata columns from original data
     """
-
+    logging.info("Function labUtils.growth_rates.fit_modified_gompertz_per_series started")
     # Normalize fixed_params
     if fixed_params is None:
         fixed_params = {}
@@ -600,7 +602,7 @@ def predict_modified_gompertz_per_series(
         - od600_fit: Predicted values
         - residual: Difference between measured and predicted values
     """
-
+    logging.info("Function labUtils.growth_rates.predict_modified_gompertz_per_series started")
     def gompertz_internal(t, y0, A, mu_max, lam):
         return gompertz(t, y0, A, mu_max, lam, clip_exp)
 
@@ -687,7 +689,6 @@ def plot_single_series(
     pred_col : str
         Column name for predicted values (default: "od600_fit")
     """
-
     import matplotlib.pyplot as plt
 
     t = series_df[time_col].to_numpy(dtype=float)
@@ -823,6 +824,7 @@ def plot_and_save(
         Column name containing standard deviation values for error bars.
         If provided, error bars will be added to the scatter plot.
     """
+    logging.info("Function labUtils.growth_rates.plot_and_save started")
     # Only merge the fit parameters, not metadata columns that already exist in preds_df
     fit_cols = group_cols + ["y0", "A", "mu_max", "mv_mu_max", "lambda", "r2", "rmse", "n", "success", "message"]
     params_to_merge = params_df[[col for col in fit_cols if col in params_df.columns]]
