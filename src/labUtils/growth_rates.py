@@ -7,7 +7,10 @@
 #  License: MIT                                              #
 ##############################################################
 
+from __future__ import annotations
+
 import logging
+from dataclasses import dataclass, field
 from math import e
 from pathlib import Path
 from typing import Any
@@ -15,6 +18,33 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
+
+
+# ---------------------------------------------------------------------------
+# Output containers (synthetic.py-style)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FitResult:
+    """Output of `fit_*_per_series_result`. Wraps the params dataframe + diagnostics."""
+
+    params_df: pd.DataFrame
+    method: str
+    failed_groups: list[tuple] = field(default_factory=list)
+
+
+@dataclass
+class PredictionResult:
+    """Output of `predict_modified_gompertz_per_series_result`."""
+
+    preds_df: pd.DataFrame
+    params_df: pd.DataFrame
+
+
+# ---------------------------------------------------------------------------
+# Math primitive
+# ---------------------------------------------------------------------------
 
 
 def gompertz(t, y0, A_0, mu_max, lam, clip_exp):
@@ -26,6 +56,32 @@ def gompertz(t, y0, A_0, mu_max, lam, clip_exp):
     z = (mu_max * e / A_0) * (lam - t) + 1.0
     z = np.clip(z, -clip_exp, clip_exp)
     return y0 + A_0 * np.exp(-np.exp(z))
+
+
+# ---------------------------------------------------------------------------
+# Private helpers — promoted from inner closures
+# ---------------------------------------------------------------------------
+
+
+def _trimmed_moving_mean(y: np.ndarray, smooth_window_size: int) -> np.ndarray:
+    """Sliding-window trimmed mean (drops min+max in each window).
+
+    Originally a closure inside `fit_max_growth_rate_per_series`; promoted to
+    module scope so it can be unit-tested and reused.
+    """
+    if len(y) < 2 * smooth_window_size:
+        return y.copy()
+    y_smoothed_list = list(y[:smooth_window_size])
+    for i in range(smooth_window_size, len(y) - smooth_window_size):
+        sub_y = np.array(y[i - smooth_window_size : i + smooth_window_size + 1])
+        sub_y_trimmed = sub_y.copy()
+        i_max = np.argmax(sub_y_trimmed)
+        i_min = np.argmin(sub_y_trimmed)
+        sub_y_trimmed[i_max] = np.nan
+        sub_y_trimmed[i_min] = np.nan
+        y_smoothed_list.append(np.nanmean(sub_y_trimmed))
+    y_smoothed_list.extend(y[-smooth_window_size:])
+    return np.array(y_smoothed_list)
 
 
 def transform_to_log_n_n0(
@@ -109,34 +165,7 @@ def fit_max_growth_rate_per_series(
     logging.info("Function labUtils.growth_rates.fit_max_growth_rate_per_series started")
 
     def curve_smoothing(y):
-        """Simple moving average smoothing with window size smooth_window_size
-
-        This function is originaly from AMN paper's repository.
-        Applies trimmed mean (removing min/max) in a sliding window.
-        """
-        # curve smoothing by running average omitting min and max of the window
-        # input is y, the time series of the OD measures (numpy array)
-        # returns y_smoothed, the same time series after smoothing (numpy array)
-
-        # Handle edge case: if data too small, return as-is
-        if len(y) < 2 * smooth_window_size:
-            return y.copy()
-
-        # Convert to list for easier manipulation, then back to array
-        y_smoothed_list = list(y[:smooth_window_size])
-
-        for i in range(smooth_window_size, len(y) - smooth_window_size):
-            sub_y = np.array(y[i - smooth_window_size : i + smooth_window_size + 1])
-            # Create a copy to avoid modifying the slice
-            sub_y_trimmed = sub_y.copy()
-            i_max = np.argmax(sub_y_trimmed)
-            i_min = np.argmin(sub_y_trimmed)
-            sub_y_trimmed[i_max] = np.nan
-            sub_y_trimmed[i_min] = np.nan
-            y_smoothed_list.append(np.nanmean(sub_y_trimmed))
-
-        y_smoothed_list.extend(y[-smooth_window_size:])
-        return np.array(y_smoothed_list)
+        return _trimmed_moving_mean(y, smooth_window_size)
 
     def max_growth_one(gdf: pd.DataFrame) -> dict[str, Any]:
         """Unified fitting function that handles any combination of fixed parameters."""

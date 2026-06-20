@@ -111,7 +111,6 @@ def toy_cobra_model():
     biomass.lower_bound = 0
     biomass.upper_bound = 1000
     biomass.add_metabolites({glc_e: -1, o2_e: -1, biomass_c: 1})
-    biomass.objective_coefficient = 1.0
 
     sink = cobra.Reaction("DM_biomass")
     sink.lower_bound = 0
