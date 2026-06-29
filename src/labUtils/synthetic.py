@@ -12,6 +12,7 @@ import itertools
 import logging
 import math
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,186 @@ class SyntheticDataset:
                 f"got {len(self.flux_tables)} organisms: {list(self.flux_tables)}"
             )
         return next(iter(self.flux_tables.values()))
+
+
+class EnumerationMode(str, Enum):
+    """Supported modes for synthetic condition enumeration."""
+
+    CARTESIAN = "cartesian"
+    CUSTOM = "custom"
+    PRESENCE_ABSENCE = "presence_absence"
+    RANDOM = "random"
+
+
+class PhenotypeMode(str, Enum):
+    """Supported modes for synthetic phenotype attachment."""
+
+    EMPTY = "empty"
+    FBA = "fba"
+    FORMULA = "formula"
+
+
+@dataclass
+class SupplementSpec:
+    """Typed supplement sampling specification.
+
+    The serialized form stays compatible with the existing YAML schema where
+    `supplements` is a dict mapping supplement names to spec dicts.
+    """
+
+    levels: list[float] | None = None
+    binary: bool = False
+    on_value: float | None = None
+    range_min: float | None = None
+    range_max: float | None = None
+    range_n: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SupplementSpec:
+        levels_raw = data.get("levels")
+        levels = [float(v) for v in levels_raw] if levels_raw is not None else None
+        range_raw = data.get("range") or {}
+        return cls(
+            levels=levels,
+            binary=bool(data.get("binary", False)),
+            on_value=float(data["on_value"]) if data.get("on_value") is not None else None,
+            range_min=float(range_raw["min"]) if range_raw.get("min") is not None else None,
+            range_max=float(range_raw["max"]) if range_raw.get("max") is not None else None,
+            range_n=int(range_raw["n"]) if range_raw.get("n") is not None else None,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if self.levels is not None:
+            out["levels"] = [float(v) for v in self.levels]
+        if self.binary:
+            out["binary"] = True
+        if self.on_value is not None:
+            out["on_value"] = float(self.on_value)
+        if self.range_min is not None and self.range_max is not None:
+            range_data: dict[str, Any] = {
+                "min": float(self.range_min),
+                "max": float(self.range_max),
+            }
+            if self.range_n is not None:
+                range_data["n"] = int(self.range_n)
+            out["range"] = range_data
+        return out
+
+
+@dataclass
+class EnumerationConfig:
+    """Typed override for the `enumeration` section in the synthetic config."""
+
+    mode: EnumerationMode = EnumerationMode.CARTESIAN
+    supplements: dict[str, SupplementSpec] = field(default_factory=dict)
+    n_samples: int | None = None
+    seed: int | None = None
+    max_active: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EnumerationConfig:
+        raw_supplements = data.get("supplements") or {}
+        supplements = {
+            name: spec if isinstance(spec, SupplementSpec) else SupplementSpec.from_dict(spec)
+            for name, spec in raw_supplements.items()
+        }
+        mode_raw = data.get("mode", EnumerationMode.CARTESIAN.value)
+        mode = mode_raw if isinstance(mode_raw, EnumerationMode) else EnumerationMode(str(mode_raw))
+        return cls(
+            mode=mode,
+            supplements=supplements,
+            n_samples=int(data["n_samples"]) if data.get("n_samples") is not None else None,
+            seed=int(data["seed"]) if data.get("seed") is not None else None,
+            max_active=int(data["max_active"]) if data.get("max_active") is not None else None,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "mode": self.mode.value,
+            "supplements": {
+                name: spec.to_dict() if isinstance(spec, SupplementSpec) else SupplementSpec.from_dict(spec).to_dict()
+                for name, spec in self.supplements.items()
+            },
+        }
+        if self.n_samples is not None:
+            out["n_samples"] = int(self.n_samples)
+        if self.seed is not None:
+            out["seed"] = int(self.seed)
+        if self.max_active is not None:
+            out["max_active"] = int(self.max_active)
+        return out
+
+
+@dataclass
+class PhenotypeConfig:
+    """Typed override for the `phenotype` section in the synthetic config."""
+
+    mode: PhenotypeMode = PhenotypeMode.EMPTY
+    formula: str | None = None
+    noise_std: float = 0.0
+    seed: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PhenotypeConfig:
+        mode_raw = data.get("mode", PhenotypeMode.EMPTY.value)
+        mode = mode_raw if isinstance(mode_raw, PhenotypeMode) else PhenotypeMode(str(mode_raw))
+        return cls(
+            mode=mode,
+            formula=data.get("formula"),
+            noise_std=float(data.get("noise_std", 0.0)),
+            seed=int(data["seed"]) if data.get("seed") is not None else None,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "mode": self.mode.value,
+            "noise_std": float(self.noise_std),
+        }
+        if self.formula is not None:
+            out["formula"] = self.formula
+        if self.seed is not None:
+            out["seed"] = int(self.seed)
+        return out
+
+
+@dataclass
+class KineticsDefaultsConfig:
+    """Typed override for `growth_kinetics_defaults` in the synthetic config."""
+
+    max_time: float = 24.0
+    mv_mu_max_value: float = 0.5
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> KineticsDefaultsConfig:
+        return cls(
+            max_time=float(data.get("max_time", 24.0)),
+            mv_mu_max_value=float(data.get("mv_mu_max_value", 0.5)),
+        )
+
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "max_time": float(self.max_time),
+            "mv_mu_max_value": float(self.mv_mu_max_value),
+        }
+
+
+def _as_enumeration_spec(value: EnumerationConfig | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(value, EnumerationConfig):
+        return value.to_dict()
+    return EnumerationConfig.from_dict(value).to_dict()
+
+
+def _as_phenotype_spec(value: PhenotypeConfig | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(value, PhenotypeConfig):
+        return value.to_dict()
+    return PhenotypeConfig.from_dict(value).to_dict()
+
+
+def _as_kinetics_spec(value: KineticsDefaultsConfig | dict[str, Any]) -> dict[str, float]:
+    if isinstance(value, KineticsDefaultsConfig):
+        return value.to_dict()
+    return KineticsDefaultsConfig.from_dict(value).to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -473,20 +654,85 @@ def _build_organism_mappings(
     )
 
 
-def generate_dataset(config: dict | str | Path) -> SyntheticDataset:
+def generate_dataset(
+    config: dict | str | Path,
+    *,
+    sbml: str | Path | None = None,
+    exchange_mapping: str | Path | None = None,
+    exchange_suffix: str | None = None,
+    output_dir: str | Path | None = None,
+    enumeration: EnumerationConfig | dict[str, Any] | None = None,
+    phenotype: PhenotypeConfig | dict[str, Any] | None = None,
+    kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
+) -> SyntheticDataset:
     """Generate a SyntheticDataset from a YAML or dict spec.
 
     See `src/labUtils/yamls/synthetic_pipeline.yaml` for the schema.
+
+    Parameters
+    ----------
+    config
+        Path to a YAML file or a pre-loaded dict containing the synthetic spec.
+    sbml
+        Optional path to an SBML model file. Overrides the ``sbml`` value in the
+        config for every organism. Required (here or in config) when
+        ``phenotype.mode`` is ``"fba"``.
+    exchange_mapping
+        Optional path to an exchange-mapping YAML. Overrides the
+        ``exchange_mapping`` value in the config for every organism.
+    exchange_suffix
+        Optional suffix appended to every exchange column name. Overrides
+        ``exchange_suffix`` in the config for every organism.
+    output_dir
+        If provided, the generated dataset is written to this directory via
+        :func:`write_dataset` before returning.
+    enumeration
+        Optional override for the whole `enumeration` section. Accepts either
+        an :class:`EnumerationConfig` or a raw dict in the same YAML shape.
+        Provided value fully overrides the config section.
+    phenotype
+        Optional override for the whole `phenotype` section. Accepts either a
+        :class:`PhenotypeConfig` or a raw dict in the same YAML shape.
+        Provided value fully overrides the config section.
+    kinetics_defaults
+        Optional override for the whole `growth_kinetics_defaults` section.
+        Accepts either a :class:`KineticsDefaultsConfig` or a raw dict.
+        Provided value fully overrides the config section.
+
+    Examples
+    --------
+    Override enumeration/phenotype/kinetics from Python while keeping
+    `supplements` as a dict:
+
+    >>> generate_dataset(
+    ...     "synthetic_pipeline.yaml",
+    ...     enumeration=EnumerationConfig(
+    ...         mode="cartesian",
+    ...         supplements={"glucose": SupplementSpec(levels=[0.0, 2.0, 4.0])},
+    ...     ),
+    ...     phenotype=PhenotypeConfig(mode="formula", formula="0.25"),
+    ...     kinetics_defaults=KineticsDefaultsConfig(max_time=12.0, mv_mu_max_value=0.5),
+    ... )
     """
     cfg = _load_config(config)
-    enumeration_spec = cfg.get("enumeration") or {}
+    if enumeration is not None:
+        enumeration_spec = _as_enumeration_spec(enumeration)
+    else:
+        enumeration_spec = cfg.get("enumeration") or {}
     conditions_df = enumerate_conditions(enumeration_spec)
 
     supplement_cols = [c for c in conditions_df.columns if c not in {"condition_id", "supplements"}]
     medium_df = conditions_df[["condition_id", *supplement_cols]].copy()
 
-    kinetics_defaults = cfg.get("growth_kinetics_defaults") or {}
-    phenotype_cfg = cfg.get("phenotype") or {"mode": "empty"}
+    if kinetics_defaults is not None:
+        effective_kinetics_defaults = _as_kinetics_spec(kinetics_defaults)
+    else:
+        effective_kinetics_defaults = cfg.get("growth_kinetics_defaults") or {}
+
+    if phenotype is not None:
+        phenotype_cfg = _as_phenotype_spec(phenotype)
+    else:
+        phenotype_cfg = cfg.get("phenotype") or {"mode": "empty"}
 
     organisms_cfg = cfg.get("organisms") or {}
     if not organisms_cfg:
@@ -495,25 +741,37 @@ def generate_dataset(config: dict | str | Path) -> SyntheticDataset:
     flux_tables: dict[str, pd.DataFrame] = {}
     mappings_by_org: dict[str, pd.DataFrame] = {}
     for org_name, org_cfg in organisms_cfg.items():
-        mappings_df = _build_organism_mappings(org_cfg, supplement_cols)
+        # Build an effective per-organism config that merges argument overrides on
+        # top of whatever is declared in the YAML.  Argument values take precedence
+        # when not None; absent keys are added gracefully without raising errors.
+        effective_cfg: dict[str, Any] = dict(org_cfg)
+        if exchange_mapping is not None:
+            effective_cfg["exchange_mapping"] = str(exchange_mapping)
+        if exchange_suffix is not None:
+            effective_cfg["exchange_suffix"] = exchange_suffix
+        if sbml is not None:
+            effective_cfg["sbml"] = str(sbml)
+
+        mappings_df = _build_organism_mappings(effective_cfg, supplement_cols)
         flux_df = build_flux_dataframe(
             conditions_df,
             mappings_df,
-            kinetics_defaults=kinetics_defaults,
-            exchange_suffix=org_cfg.get("exchange_suffix"),
-            molecular_weights=org_cfg.get("molecular_weights"),
+            kinetics_defaults=effective_kinetics_defaults,
+            exchange_suffix=effective_cfg.get("exchange_suffix"),
+            molecular_weights=effective_cfg.get("molecular_weights"),
         )
 
-        pheno_mode = phenotype_cfg.get("mode", "empty")
+        pheno_mode_raw = phenotype_cfg.get("mode", PhenotypeMode.EMPTY.value)
+        pheno_mode = pheno_mode_raw.value if isinstance(pheno_mode_raw, PhenotypeMode) else str(pheno_mode_raw)
         model = None
         medium_columns = None
         if pheno_mode == "fba":
-            sbml = org_cfg.get("sbml")
-            if not sbml:
+            effective_sbml = effective_cfg.get("sbml")
+            if not effective_sbml:
                 raise ValueError(f"phenotype mode='fba' requires `sbml` for organism '{org_name}'.")
             from labUtils.fba.fba_tools import load_model
 
-            model = load_model(str(sbml))
+            model = load_model(str(effective_sbml))
             medium_columns = [c for c in flux_df.columns if c != "mu_max"]
         flux_df = attach_phenotype(
             flux_df,
@@ -523,18 +781,23 @@ def generate_dataset(config: dict | str | Path) -> SyntheticDataset:
             medium_columns=medium_columns,
             formula=phenotype_cfg.get("formula"),
             noise_std=float(phenotype_cfg.get("noise_std", 0.0)),
-            seed=phenotype_cfg.get("seed"),
+            seed=int(phenotype_cfg["seed"]) if phenotype_cfg.get("seed") is not None else None,
         )
 
         flux_tables[org_name] = flux_df
         mappings_by_org[org_name] = mappings_df
 
-    return SyntheticDataset(
+    dataset = SyntheticDataset(
         conditions_df=conditions_df,
         medium_df=medium_df,
         flux_tables=flux_tables,
         mappings=mappings_by_org,
     )
+
+    if output_dir is not None:
+        write_dataset(dataset, output_dir)
+
+    return dataset
 
 
 def write_dataset(dataset: SyntheticDataset, out_dir: str | Path) -> dict[str, Path]:

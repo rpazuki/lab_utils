@@ -11,6 +11,12 @@ import pytest
 
 from labUtils.amn_mappings import MediumSource
 from labUtils.synthetic import (
+    EnumerationMode,
+    EnumerationConfig,
+    KineticsDefaultsConfig,
+    PhenotypeMode,
+    PhenotypeConfig,
+    SupplementSpec,
     SyntheticDataset,
     attach_phenotype,
     build_flux_dataframe,
@@ -111,7 +117,6 @@ def toy_cobra_model():
     biomass.lower_bound = 0
     biomass.upper_bound = 1000
     biomass.add_metabolites({glc_e: -1, o2_e: -1, biomass_c: 1})
-    biomass.objective_coefficient = 1.0
 
     sink = cobra.Reaction("DM_biomass")
     sink.lower_bound = 0
@@ -567,6 +572,82 @@ class TestGenerateDataset:
     def test_missing_organisms_raises(self):
         with pytest.raises(ValueError, match="at least one organism"):
             generate_dataset({"synthetic": {"enumeration": {"mode": "cartesian", "supplements": {}}}})
+
+    def test_supplement_dataclass_roundtrip_keeps_dict_shape(self):
+        cfg = EnumerationConfig(
+            mode=EnumerationMode.CARTESIAN,
+            supplements={
+                "glucose": SupplementSpec(levels=[0.0, 2.0, 4.0]),
+                "uracil": SupplementSpec(binary=True, on_value=0.0224),
+                "glycine": SupplementSpec(range_min=0.0, range_max=0.5, range_n=5),
+            },
+        )
+        as_dict = cfg.to_dict()
+        assert isinstance(as_dict["supplements"], dict)
+        assert set(as_dict["supplements"].keys()) == {"glucose", "uracil", "glycine"}
+        assert as_dict["supplements"]["glucose"]["levels"] == [0.0, 2.0, 4.0]
+
+    def test_enumeration_override_works_when_yaml_section_missing(self):
+        cfg = {
+            "synthetic": {
+                "organisms": {
+                    "ecoli": {
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "molecular_weights": {"glucose": GLUCOSE_MW},
+                    }
+                }
+            }
+        }
+        enum = EnumerationConfig(
+            mode=EnumerationMode.CUSTOM,
+            supplements={"glucose": SupplementSpec(levels=[1.5, 2.5])},
+        )
+        ds = generate_dataset(cfg, enumeration=enum)
+        assert set(ds.conditions_df["glucose"].astype(float).tolist()) == {1.5, 2.5}
+
+    def test_phenotype_override_precedence_over_yaml(self):
+        cfg = {
+            "synthetic": {
+                "organisms": {
+                    "ecoli": {
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "molecular_weights": {"glucose": GLUCOSE_MW},
+                    }
+                },
+                "enumeration": {
+                    "mode": "cartesian",
+                    "supplements": {"glucose": {"levels": [0.0, 4.0]}},
+                },
+                "phenotype": {"mode": "empty"},
+            }
+        }
+        ds = generate_dataset(cfg, phenotype=PhenotypeConfig(mode=PhenotypeMode.FORMULA, formula="0.25"))
+        assert np.allclose(ds.flux_df["mu_max"].to_numpy(dtype=float), 0.25)
+
+    def test_kinetics_defaults_override_precedence_over_yaml(self):
+        cfg = {
+            "synthetic": {
+                "organisms": {
+                    "ecoli": {
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "molecular_weights": {"glucose": GLUCOSE_MW},
+                    }
+                },
+                "enumeration": {
+                    "mode": "cartesian",
+                    "supplements": {"glucose": {"levels": [4.0]}},
+                },
+                "growth_kinetics_defaults": {"max_time": 24.0, "mv_mu_max_value": 0.5},
+            }
+        }
+        baseline = generate_dataset(cfg)
+        overridden = generate_dataset(
+            cfg,
+            kinetics_defaults=KineticsDefaultsConfig(max_time=12.0, mv_mu_max_value=0.5),
+        )
+        base_flux = float(baseline.flux_df["EX_glc__D_e"].iloc[0])
+        override_flux = float(overridden.flux_df["EX_glc__D_e"].iloc[0])
+        assert override_flux == pytest.approx(base_flux * 2.0, rel=1e-6)
 
 
 class TestWriteDataset:
