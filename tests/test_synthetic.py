@@ -388,6 +388,19 @@ class TestFluxDataframe:
             _mw_to_mmol(4.0, GLUCOSE_MW) / (24.0 * 0.5), rel=1e-6
         )
 
+    def test_supplement_mmol_override_takes_precedence_over_mass(self, simple_mappings_df):
+        conds = enumerate_conditions({
+            "mode": "cartesian",
+            "supplements": {"glucose": {"levels": [4.0]}},
+        })
+        flux = build_flux_dataframe(
+            conds,
+            simple_mappings_df,
+            supplement_mmol_overrides={"glucose": 10.0},
+        )
+        expected = 10.0 / (24.0 * 0.5)
+        assert flux["EX_glc__D_e"].iloc[0] == pytest.approx(expected, rel=1e-6)
+
 
 # ---------------------------------------------------------------------------
 # Phenotype attachment tests
@@ -648,6 +661,55 @@ class TestGenerateDataset:
         base_flux = float(baseline.flux_df["EX_glc__D_e"].iloc[0])
         override_flux = float(overridden.flux_df["EX_glc__D_e"].iloc[0])
         assert override_flux == pytest.approx(base_flux * 2.0, rel=1e-6)
+
+    def test_enumeration_mmol_per_liter_override_applies_to_supplement_flux(self):
+        cfg = {
+            "synthetic": {
+                "organisms": {
+                    "ecoli": {
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "molecular_weights": {"glucose": GLUCOSE_MW},
+                    }
+                },
+                "enumeration": {
+                    "mode": "cartesian",
+                    "supplements": {
+                        "glucose": {
+                            "levels": [4.0],
+                            "mmol_per_liter": 5.0,
+                        }
+                    },
+                },
+            }
+        }
+        ds = generate_dataset(cfg)
+        expected = 5.0 / (24.0 * 0.5)
+        assert float(ds.flux_df["EX_glc__D_e"].iloc[0]) == pytest.approx(expected, rel=1e-6)
+
+    def test_enumeration_mmol_per_liter_wins_over_mol_per_liter(self):
+        cfg = {
+            "synthetic": {
+                "organisms": {
+                    "ecoli": {
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "molecular_weights": {"glucose": GLUCOSE_MW},
+                    }
+                },
+                "enumeration": {
+                    "mode": "cartesian",
+                    "supplements": {
+                        "glucose": {
+                            "levels": [4.0],
+                            "mmol_per_liter": 3.0,
+                            "mol_per_liter": 0.2,
+                        }
+                    },
+                },
+            }
+        }
+        ds = generate_dataset(cfg)
+        expected = 3.0 / (24.0 * 0.5)
+        assert float(ds.flux_df["EX_glc__D_e"].iloc[0]) == pytest.approx(expected, rel=1e-6)
 
 
 class TestWriteDataset:

@@ -60,6 +60,11 @@ synthetic:
       uracil:
         binary: true                    # 0 or on_value (default 1.0)
         on_value: 0.0224                # uracil concentration when "on", g/L
+        # Optional direct concentration override for supplement flux conversion.
+        # Precedence: mmol_per_liter > mol_per_liter > g/L (levels/on_value/range).
+        # When provided, the value is used as fixed mmol/L for active conditions.
+        # mmol_per_liter: 0.2
+        # mol_per_liter: 0.0002
       glycine:
         range: { min: 0.0, max: 0.5, n: 5 }   # 5 evenly-spaced values
 

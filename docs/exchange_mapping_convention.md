@@ -124,6 +124,14 @@ This applies to both `medium` and `supplement` sources. `fixed` sources use `flu
   - If MW can be back-derived from `mass_per_litre / mmol_concentration`, the per-condition g/L value is converted to mmol at runtime.
   - If MW cannot be derived (e.g. only `mmol_per_liter` was specified, `mass_per_litre` is 0), the fixed `mmol_concentration` from the mapping is used for all conditions where that supplement is active. This means every active condition gets the same flux, which is the only sensible interpretation when no per-unit-mass conversion is available.
 
+In addition, synthetic enumeration supplement specs now support direct concentration overrides:
+
+- `mmol_per_liter` — direct mmol/L for that supplement in synthetic conversion.
+- `mol_per_liter` — direct mol/L (converted internally to mmol/L).
+
+Precedence for synthetic supplement conversion is the same convention as mappings:
+`mmol_per_liter` > `mol_per_liter` > g/L (`levels`, `on_value`, `range`).
+
 ---
 
 ## Example: uracil at known molar concentration

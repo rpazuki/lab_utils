@@ -89,6 +89,8 @@ class SupplementSpec:
     range_min: float | None = None
     range_max: float | None = None
     range_n: int | None = None
+    mmol_per_liter: float | None = None
+    mol_per_liter: float | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SupplementSpec:
@@ -102,6 +104,8 @@ class SupplementSpec:
             range_min=float(range_raw["min"]) if range_raw.get("min") is not None else None,
             range_max=float(range_raw["max"]) if range_raw.get("max") is not None else None,
             range_n=int(range_raw["n"]) if range_raw.get("n") is not None else None,
+            mmol_per_liter=float(data["mmol_per_liter"]) if data.get("mmol_per_liter") is not None else None,
+            mol_per_liter=float(data["mol_per_liter"]) if data.get("mol_per_liter") is not None else None,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -120,6 +124,10 @@ class SupplementSpec:
             if self.range_n is not None:
                 range_data["n"] = int(self.range_n)
             out["range"] = range_data
+        if self.mmol_per_liter is not None:
+            out["mmol_per_liter"] = float(self.mmol_per_liter)
+        if self.mol_per_liter is not None:
+            out["mol_per_liter"] = float(self.mol_per_liter)
         return out
 
 
@@ -238,6 +246,25 @@ def _as_kinetics_spec(value: KineticsDefaultsConfig | dict[str, Any]) -> dict[st
     return KineticsDefaultsConfig.from_dict(value).to_dict()
 
 
+def _extract_supplement_mmol_overrides(spec: dict[str, Any]) -> dict[str, float]:
+    """Extract per-supplement mmol/L overrides from enumeration spec.
+
+    Precedence matches mapping convention:
+    mmol_per_liter > mol_per_liter (converted to mmol/L).
+    """
+    supplements = spec.get("supplements", {}) or {}
+    overrides: dict[str, float] = {}
+    for name, supp_spec in supplements.items():
+        if not isinstance(supp_spec, dict):
+            continue
+        if supp_spec.get("mmol_per_liter") is not None:
+            overrides[str(name).lower()] = float(supp_spec["mmol_per_liter"])
+            continue
+        if supp_spec.get("mol_per_liter") is not None:
+            overrides[str(name).lower()] = float(supp_spec["mol_per_liter"]) * 1000.0
+    return overrides
+
+
 # ---------------------------------------------------------------------------
 # Enumeration
 # ---------------------------------------------------------------------------
@@ -261,6 +288,12 @@ def enumerate_conditions(spec: dict[str, Any]) -> pd.DataFrame:
               if no `levels`, or sampled continuously by `random`.
             * `on_value: float` — used by `presence_absence` and as the "on" mass
               for `binary` levels (default 1.0).
+                        * `mmol_per_liter: float` — optional direct mmol/L override used by
+                            `build_flux_dataframe`; when set, it takes precedence over g/L-based
+                            conversion for this supplement.
+                        * `mol_per_liter: float` — optional direct mol/L override used by
+                            `build_flux_dataframe`; converted to mmol/L. Lower precedence than
+                            `mmol_per_liter`.
         - `n_samples`: int, only for `random`.
         - `seed`: int, for `random` / `presence_absence` determinism (optional).
         - `max_active`: int, optional bound for `presence_absence`.
@@ -405,6 +438,7 @@ def build_flux_dataframe(
     exchange_suffix: str | None = None,
     growth_rate_column: str = "mu_max",
     molecular_weights: dict[str, float] | None = None,
+    supplement_mmol_overrides: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Build a flux dataframe in the shape of `build_supplement_flux_dataframe`.
 
@@ -433,8 +467,14 @@ def build_flux_dataframe(
         Optional explicit MW (g/mol) per supplement common name. Takes precedence
         over MW back-derived from the mapping's `mmol_concentration` field. Use
         when `pubchempy` is unavailable or you want deterministic MW values.
+    supplement_mmol_overrides
+        Optional direct mmol/L override per supplement common name.
+        Precedence for supplement concentration conversion is:
+        `supplement_mmol_overrides` > mapping-derived direct mmol override
+        (`mmol_per_liter` / `mol_per_liter`) > g/L-to-mmol conversion via MW.
     """
     mw_overrides = {k.lower(): float(v) for k, v in (molecular_weights or {}).items()}
+    mmol_overrides = {k.lower(): float(v) for k, v in (supplement_mmol_overrides or {}).items()}
     kin = {"max_time": 24.0, "mv_mu_max_value": 0.5, **(kinetics_defaults or {})}
     max_time = float(kin["max_time"])
     od_at_gr = float(kin["mv_mu_max_value"])
@@ -488,13 +528,17 @@ def build_flux_dataframe(
             mass = float(cond.get(supp_name, 0.0))
             if mass <= 0.0:
                 continue
+            supp_key = supp_name.lower()
             meta = supp_meta.get(supp_name.lower())
             if meta is None:
                 # Not in mapping as a supplement source — silently skip; this can be a
                 # supplement column that maps onto a MEDIUM or FIXED exchange and is
                 # therefore already accounted for via the template.
                 continue
-            if meta.get("molecular_weight") is None and meta.get("mmol_concentration", 0.0) > 0.0:
+            if supp_key in mmol_overrides:
+                mmol = mmol_overrides[supp_key]
+                flux = mmol / (max_time * od_at_gr) if max_time > 0 and od_at_gr > 0 else 0.0
+            elif meta.get("molecular_weight") is None and meta.get("mmol_concentration", 0.0) > 0.0:
                 # MW unavailable but a direct mmol override was set (mmol_per_liter /
                 # mol_per_liter in the mapping).  Use the fixed mmol for any active condition.
                 mmol = meta["mmol_concentration"]
@@ -657,7 +701,8 @@ def _build_organism_mappings(
 def generate_dataset(
     config: dict | str | Path,
     *,
-    sbml: str | Path | None = None,
+    organism_sbml_path: str | Path | None = None,
+    community_sbml_paths: dict[str, str | Path] | None = None,
     exchange_mapping: str | Path | None = None,
     exchange_suffix: str | None = None,
     output_dir: str | Path | None = None,
@@ -673,10 +718,27 @@ def generate_dataset(
     ----------
     config
         Path to a YAML file or a pre-loaded dict containing the synthetic spec.
-    sbml
-        Optional path to an SBML model file. Overrides the ``sbml`` value in the
-        config for every organism. Required (here or in config) when
+    organism_sbml_path
+        Optional path to a single SBML model file. Applied to **every** organism,
+        so suited for single-organism runs or when all organisms share the same
+        model. Overrides the per-organism ``sbml`` value in the config.
+        Required (here, via ``community_sbml_paths``, or in the config) when
         ``phenotype.mode`` is ``"fba"``.
+    community_sbml_paths
+        Optional per-organism SBML paths for co-culture / community setups.
+        Keys must match the organism names declared under ``organisms:`` in the
+        config.  Takes precedence over ``organism_sbml_path`` for the organisms
+        it covers; organisms not listed here fall back to ``organism_sbml_path``
+        (if provided) or their config value.  Example::
+
+            generate_dataset(
+                cfg,
+                community_sbml_paths={
+                    "ecoli":     "/models/iML1515.xml",
+                    "bsubtilis": "/models/iYO844.xml",
+                },
+            )
+
     exchange_mapping
         Optional path to an exchange-mapping YAML. Overrides the
         ``exchange_mapping`` value in the config for every organism.
@@ -701,16 +763,31 @@ def generate_dataset(
 
     Examples
     --------
+    Single organism — broadcast one SBML to all organisms:
+
+    >>> generate_dataset(cfg, organism_sbml_path="/models/iML1515.xml")
+
+    Co-culture — different model per organism:
+
+    >>> generate_dataset(
+    ...     cfg,
+    ...     community_sbml_paths={
+    ...         "ecoli":     "/models/iML1515.xml",
+    ...         "bsubtilis": "/models/iYO844.xml",
+    ...     },
+    ...     phenotype=PhenotypeConfig(mode=PhenotypeMode.FBA),
+    ... )
+
     Override enumeration/phenotype/kinetics from Python while keeping
-    `supplements` as a dict:
+    ``supplements`` as a dict:
 
     >>> generate_dataset(
     ...     "synthetic_pipeline.yaml",
     ...     enumeration=EnumerationConfig(
-    ...         mode="cartesian",
+    ...         mode=EnumerationMode.CARTESIAN,
     ...         supplements={"glucose": SupplementSpec(levels=[0.0, 2.0, 4.0])},
     ...     ),
-    ...     phenotype=PhenotypeConfig(mode="formula", formula="0.25"),
+    ...     phenotype=PhenotypeConfig(mode=PhenotypeMode.FORMULA, formula="0.25"),
     ...     kinetics_defaults=KineticsDefaultsConfig(max_time=12.0, mv_mu_max_value=0.5),
     ... )
     """
@@ -719,6 +796,7 @@ def generate_dataset(
         enumeration_spec = _as_enumeration_spec(enumeration)
     else:
         enumeration_spec = cfg.get("enumeration") or {}
+    supplement_mmol_overrides = _extract_supplement_mmol_overrides(enumeration_spec)
     conditions_df = enumerate_conditions(enumeration_spec)
 
     supplement_cols = [c for c in conditions_df.columns if c not in {"condition_id", "supplements"}]
@@ -749,8 +827,11 @@ def generate_dataset(
             effective_cfg["exchange_mapping"] = str(exchange_mapping)
         if exchange_suffix is not None:
             effective_cfg["exchange_suffix"] = exchange_suffix
-        if sbml is not None:
-            effective_cfg["sbml"] = str(sbml)
+        # SBML resolution: per-organism dict takes precedence over broadcast path.
+        if community_sbml_paths is not None and org_name in community_sbml_paths:
+            effective_cfg["sbml"] = str(community_sbml_paths[org_name])
+        elif organism_sbml_path is not None:
+            effective_cfg["sbml"] = str(organism_sbml_path)
 
         mappings_df = _build_organism_mappings(effective_cfg, supplement_cols)
         flux_df = build_flux_dataframe(
@@ -759,6 +840,7 @@ def generate_dataset(
             kinetics_defaults=effective_kinetics_defaults,
             exchange_suffix=effective_cfg.get("exchange_suffix"),
             molecular_weights=effective_cfg.get("molecular_weights"),
+            supplement_mmol_overrides=supplement_mmol_overrides,
         )
 
         pheno_mode_raw = phenotype_cfg.get("mode", PhenotypeMode.EMPTY.value)

@@ -87,6 +87,10 @@ synthetic:
       uracil:
         binary: true                          # shorthand for levels: [0, on_value]
         on_value: 0.0224                      # g/L when "on"
+        # Optional direct concentration override used in flux conversion.
+        # Precedence: mmol_per_liter > mol_per_liter > g/L fields above.
+        mmol_per_liter: 0.2                   # mmol/L (fixed for active conditions)
+        # mol_per_liter: 0.0002               # mol/L (converted to mmol/L)
       glycine:
         range: { min: 0.0, max: 0.5, n: 5 }  # n evenly-spaced values
 
@@ -125,6 +129,12 @@ synthetic:
 | `binary` | `cartesian` | Shorthand for `levels: [0.0, on_value]`. |
 | `on_value` | `presence_absence`, `binary` | Concentration when supplement is "on" (default 1.0 g/L). |
 | `range` | `cartesian`, `random` | `{min, max, n}` — linspace for `cartesian`, continuous range for `random`. |
+| `mmol_per_liter` | all modes | Direct mmol/L override for supplement flux conversion; overrides g/L conversion when active. |
+| `mol_per_liter` | all modes | Direct mol/L override (converted to mmol/L); lower precedence than `mmol_per_liter`. |
+
+Override precedence for supplement concentration conversion is:
+`mmol_per_liter` > `mol_per_liter` > g/L (`levels`, `on_value`, `range`).
+When a direct mmol/mol override is set, it is applied as a fixed mmol/L value for each active condition.
 
 ### Phenotype modes
 
