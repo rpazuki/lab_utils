@@ -107,3 +107,47 @@ def test_pattern_rule_with_sample_size_keeps_per_strain_behavior():
     assert sorted(result["strain"].unique()) == ["EGMB_61", "EGMB_62"]
     assert sorted(result["group_id"].unique()) == ["A_1-2", "B_1-2"]
     assert set(result["n_replicates"]) == {2}
+
+
+@pytest.mark.parametrize("direction", ["Alphabetica", "numerical", "row", "column"])
+def test_custom_rule_direction_aliases_are_supported(direction: str):
+    df = _build_fixed_pattern_group_data()
+
+    result = calculate_replicate_statistics_by_custom(
+        df,
+        strain_pattern=None,
+        custom_rules={
+            "EGMB_rule": {
+                "pattern": r"EGMB_\d+",
+                "direction": direction,
+                "sample_size": 2,
+            }
+        },
+    )
+
+    assert not result.empty
+
+
+def test_pattern_and_sample_size_explicit_none_are_supported():
+    df = _build_variable_pattern_group_data()
+
+    result = calculate_replicate_statistics_by_custom(
+        df,
+        strain_pattern=None,
+        custom_rules={
+            "EGMB": {
+                "pattern": r"EGMB_\d+",
+                "direction": "alphabetical",
+                "sample_size": None,
+            },
+            "control": {
+                "pattern": None,
+                "direction": "row",
+                "sample_size": 2,
+            },
+        },
+    )
+
+    assert not result.empty
+    assert "EGMB" in set(result["strain"].unique())
+    assert "control" in set(result["strain"].unique())

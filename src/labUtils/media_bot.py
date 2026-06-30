@@ -12,6 +12,7 @@ import logging
 import csv
 import re
 from dataclasses import dataclass, field
+from enum import Enum
 from io import StringIO
 from pathlib import Path
 from typing import Any, TypedDict
@@ -22,6 +23,7 @@ __all__ = [
     "ColumnSchema",
     "ParseResult",
     "ReplicateStats",
+    "CustomReplicateDirection",
     "CustomReplicateRule",
     "parse_raw_CLARIOstar_export",
     "parse_protocol_metadata",
@@ -76,12 +78,99 @@ class ReplicateStats:
     direction: str | None = None
 
 
+class CustomReplicateDirection(str, Enum):
+    """Allowed direction labels for custom replicate grouping rules."""
+
+    ALPHABETICAL = "alphabetical"
+    NUMERICAL = "numerical"
+    ROW = "row"
+    COLUMN = "column"
+
+
 class CustomReplicateRule(TypedDict, total=False):
     """Rule definition for custom replicate statistics aggregation."""
 
-    direction: str
-    pattern: str
-    sample_size: int
+    direction: CustomReplicateDirection
+    pattern: str | None
+    sample_size: int | None
+
+
+class _NormalizedCustomReplicateRule(TypedDict):
+    """Internal normalized shape for custom replicate rules."""
+
+    direction: CustomReplicateDirection
+    pattern: str | None
+    sample_size: int | None
+
+
+def _normalize_replicate_direction(direction: str) -> tuple[str, bool]:
+    """Normalize direction aliases and return canonical label + row/column flag."""
+    normalized = direction.lower().strip()
+    aliases = {
+        "alphabetical": CustomReplicateDirection.ALPHABETICAL.value,
+        "alphabetica": CustomReplicateDirection.ALPHABETICAL.value,
+        "alpha": CustomReplicateDirection.ALPHABETICAL.value,
+        "rows": CustomReplicateDirection.ROW.value,
+        "row": CustomReplicateDirection.ROW.value,
+        "numerical": CustomReplicateDirection.NUMERICAL.value,
+        "num": CustomReplicateDirection.NUMERICAL.value,
+        "columns": CustomReplicateDirection.COLUMN.value,
+        "column": CustomReplicateDirection.COLUMN.value,
+    }
+    if normalized not in aliases:
+        raise ValueError(
+            f"Invalid direction '{direction}'. Must be one of "
+            "'alphabetical'/'alphabetica'/'alpha'/'row'/'rows' or "
+            "'numerical'/'num'/'column'/'columns'"
+        )
+
+    canonical = aliases[normalized]
+    is_alphabetical = canonical in (
+        CustomReplicateDirection.ALPHABETICAL.value,
+        CustomReplicateDirection.ROW.value,
+    )
+    return canonical, is_alphabetical
+
+
+def _parse_custom_replicate_rule(rule_key: str, rule: dict[str, Any]) -> _NormalizedCustomReplicateRule:
+    """Validate and normalize a user-provided custom replicate rule."""
+    if not isinstance(rule, dict):
+        raise ValueError(
+            f"Rule '{rule_key}' must be a mapping, got {type(rule).__name__}"
+        )
+
+    direction_raw = rule.get("direction", CustomReplicateDirection.ALPHABETICAL)
+    if isinstance(direction_raw, CustomReplicateDirection):
+        direction = direction_raw
+    elif isinstance(direction_raw, str):
+        canonical_direction, _ = _normalize_replicate_direction(direction_raw)
+        direction = CustomReplicateDirection(canonical_direction)
+    else:
+        raise ValueError(
+            f"Direction for rule '{rule_key}' must be a string or CustomReplicateDirection, "
+            f"got {type(direction_raw).__name__}"
+        )
+
+    pattern = rule.get("pattern")
+    if pattern is not None and not isinstance(pattern, str):
+        raise ValueError(
+            f"Pattern for rule '{rule_key}' must be a string or None, got {type(pattern).__name__}"
+        )
+
+    sample_size = rule.get("sample_size")
+    if sample_size is not None:
+        if not isinstance(sample_size, int):
+            raise ValueError(
+                f"sample_size for rule '{rule_key}' must be an integer or None, got {type(sample_size).__name__}"
+            )
+        if sample_size < 1:
+            raise ValueError(f"sample_size must be at least 1 for rule '{rule_key}', got {sample_size}")
+
+    return {
+        "direction": direction,
+        "pattern": pattern,
+        "sample_size": sample_size,
+    }
 
 
 # ---------- helpers ----------
@@ -691,16 +780,11 @@ def calculate_replicate_statistics_by_well(
         raise ValueError(f"DataFrame is missing required columns: {missing_cols}")
 
     # Validate direction parameter
-    direction = direction.lower()
-    if direction not in ["alphabetical", "alpha", "rows", "numerical", "num", "columns"]:
-        raise ValueError(f"Invalid direction '{direction}'. Must be 'alphabetical'/'alpha'/'rows' or 'numerical'/'num'/'columns'")
+    _, is_alphabetical = _normalize_replicate_direction(direction)
 
     # Validate sample_size
     if sample_size < 1:
         raise ValueError(f"sample_size must be at least 1, got {sample_size}")
-
-    # Determine grouping direction
-    is_alphabetical = direction in ["alphabetical", "alpha", "rows"]
 
     # Get unique wells and sort them appropriately
     unique_wells = df_parsed[["well", "well_row", "well_col"]].drop_duplicates()
@@ -825,7 +909,7 @@ def calculate_replicate_statistics_by_well(
 def calculate_replicate_statistics_by_custom(
     df_parsed: pd.DataFrame,
     strain_pattern: str | None = r"([A-Za-z]+)",
-    custom_rules: dict[str, CustomReplicateRule] | None = None,
+    custom_rules: dict[str, dict[str, Any]] | None = None,
     ddof: int = 1,
     value_column_name: str = "od",
 ) -> pd.DataFrame:
@@ -847,14 +931,16 @@ def calculate_replicate_statistics_by_custom(
         Example: "strainA1", "strainA2" -> grouped as "strainA"
         If None, uses strain values as-is without pattern extraction.
         This global pattern is applied before rule-specific patterns.
-    custom_rules : dict[str, dict[str, int | str]] | None, optional
+        custom_rules : dict[str, dict[str, Any]] | None, optional
         Dictionary mapping rule names to their aggregation rules.
         Each rule can target specific strains by name or use a pattern to match multiple strains.
         Each rule dictionary can contain:
-        - 'direction': "alphabetical"/"alpha"/"rows" or "numerical"/"num"/"columns" (required).
+                - 'direction': CustomReplicateDirection or a supported alias string.
+                    Supported aliases: "alphabetical", "alphabetica", "alpha", "row", "rows",
+                    "numerical", "num", "column", "columns".
           Convention: alphabetical/rows = row direction, numerical/columns = column direction
-        - 'sample_size': int >= 1 (optional for pattern rules)
-        - 'pattern': str, optional regex pattern to match strain names
+                - 'sample_size': int >= 1 or None (optional for pattern rules)
+                - 'pattern': str or None, optional regex pattern to match strain names
 
         Format (exact strain match):
         {
@@ -975,6 +1061,11 @@ def calculate_replicate_statistics_by_custom(
         logging.info("Function calculate_replicate_statistics_by_custom finished successfully")
         return pd.DataFrame(columns=output_columns)
 
+    normalized_custom_rules: dict[str, _NormalizedCustomReplicateRule] = {
+        rule_key: _parse_custom_replicate_rule(rule_key, rule)
+        for rule_key, rule in custom_rules.items()
+    }
+
     # Create a copy to avoid modifying the original
     df_with_groups = df_parsed.copy()
 
@@ -1001,16 +1092,13 @@ def calculate_replicate_statistics_by_custom(
     unique_strains = [str(strain) for strain in df_with_groups["strain_group"].dropna().unique()]
     logging.info(f"Unique strains: {unique_strains}")
     assigned_strains: dict[str, str] = {}
-    rules_to_process: list[tuple[str, CustomReplicateRule, list[str], bool]] = []
-    for rule_key, rules in custom_rules.items():
-        pattern_str = rules.get("pattern")
-        use_full_direction_groups = pattern_str is not None and rules.get("sample_size") is None
+    rules_to_process: list[tuple[str, _NormalizedCustomReplicateRule, list[str], bool]] = []
+    for rule_key, rules in normalized_custom_rules.items():
+        pattern_str = rules["pattern"]
+        use_full_direction_groups = pattern_str is not None and rules["sample_size"] is None
 
         # Check if this rule has a pattern
         if pattern_str is not None:
-            if not isinstance(pattern_str, str):
-                raise ValueError(f"Pattern for rule '{rule_key}' must be a string, got {type(pattern_str).__name__}")
-
             # Pattern-based rule: find all strains matching the pattern
             try:
                 pattern = re.compile(pattern_str)
@@ -1040,9 +1128,9 @@ def calculate_replicate_statistics_by_custom(
                     f"Please ensure each strain matches at most one pattern."
                 )
             assigned_strains[rule_key] = rule_key
-            use_full_direction_groups = rules.get("sample_size") is None
+            use_full_direction_groups = rules["sample_size"] is None
             rules_to_process.append((rule_key, rules, [rule_key], use_full_direction_groups))
-            logging.info(f"Rule '{rule_key}' matches exact strain: {rule_key} sample_size: {rules.get('sample_size')}")
+            logging.info(f"Rule '{rule_key}' matches exact strain: {rule_key} sample_size: {rules['sample_size']}")
 
     # Process each strain according to its custom rules
     all_results = []
@@ -1054,27 +1142,13 @@ def calculate_replicate_statistics_by_custom(
             continue  # Skip if no data for this strain
 
         # Extract rules
-        direction_raw = rules.get("direction", "alphabetical")
-        if not isinstance(direction_raw, str):
-            raise ValueError(
-                f"Direction for rule '{output_strain}' must be a string, got {type(direction_raw).__name__}"
-            )
-
-        # Validate direction
-        direction = direction_raw.lower()
-        if direction not in ["alphabetical", "alpha", "rows", "numerical", "num", "columns"]:
-            raise ValueError(
-                f"Invalid direction '{direction}' for strain '{output_strain}'. "
-                f"Must be 'alphabetical'/'alpha'/'rows' or 'numerical'/'num'/'columns'"
-            )
-
-        # Determine grouping direction
-        is_alphabetical = direction in ["alphabetical", "alpha", "rows"]
+        direction_enum = rules["direction"]
+        canonical_direction, is_alphabetical = _normalize_replicate_direction(direction_enum.value)
 
         # Get unique wells and sort them appropriately
         unique_wells = strain_df[["well", "well_row", "well_col"]].drop_duplicates()
         logging.info(f"Processing strain '{output_strain}' with {len(unique_wells)} unique wells\n"
-                     f"\t\t\t\t\t Direction: {direction}, use_full_direction_groups: {use_full_direction_groups}")
+                     f"\t\t\t\t\t Direction: {canonical_direction}, use_full_direction_groups: {use_full_direction_groups}")
         if is_alphabetical:
             # Sort by row then column (A1, A2, A3, ..., B1, B2, B3, ...)
             unique_wells = unique_wells.sort_values(["well_row", "well_col"]).reset_index(drop=True)
@@ -1094,13 +1168,7 @@ def calculate_replicate_statistics_by_custom(
             # Group full rows/columns so replicate counts can vary across positions.
             unique_wells["group_num"] = pd.factorize(unique_wells[grouping_col], sort=False)[0]
         else:
-            sample_size = rules.get("sample_size", 3)
-            if not isinstance(sample_size, int):
-                raise ValueError(
-                    f"sample_size must be an integer for strain '{output_strain}', got {type(sample_size).__name__}"
-                )
-            if sample_size < 1:
-                raise ValueError(f"sample_size must be at least 1 for strain '{output_strain}', got {sample_size}")
+            sample_size = rules["sample_size"] if rules["sample_size"] is not None else 3
 
             # Check if divisible by sample_size
             if len(unique_wells) % sample_size != 0:
