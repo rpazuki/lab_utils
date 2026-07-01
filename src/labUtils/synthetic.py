@@ -698,6 +698,240 @@ def _build_organism_mappings(
     )
 
 
+def _construct_dataset_config_from_args(
+    *,
+    organisms: dict[str, dict[str, Any]],
+    organism_sbml_path: str | Path | None = None,
+    community_sbml_paths: dict[str, str | Path] | None = None,
+    exchange_mapping: str | Path | None = None,
+    exchange_suffix: str | None = None,
+    output_dir: str | Path | None = None,
+    enumeration: EnumerationConfig | dict[str, Any] | None = None,
+    phenotype: PhenotypeConfig | dict[str, Any] | None = None,
+    kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Construct a full synthetic config from explicit arguments.
+
+    Unlike `generate_dataset`, this path does not merge with a pre-existing YAML
+    config. It validates that the provided arguments are sufficient to stand on
+    their own, then returns a complete config mapping suitable for
+    `generate_dataset`.
+    """
+    if not isinstance(organisms, dict) or not organisms:
+        raise ValueError("`organisms` must be a non-empty mapping of organism name -> config.")
+
+    if enumeration is None:
+        raise ValueError("`enumeration` is required when constructing a synthetic config from arguments.")
+
+    if community_sbml_paths is not None:
+        if not isinstance(community_sbml_paths, dict):
+            raise ValueError("`community_sbml_paths` must be a mapping of organism name -> SBML path.")
+        unknown_organisms = sorted(set(community_sbml_paths) - set(organisms))
+        if unknown_organisms:
+            raise ValueError(
+                "`community_sbml_paths` contains unknown organisms: "
+                f"{unknown_organisms}. Expected keys from `organisms`."
+            )
+
+    enumeration_spec = _as_enumeration_spec(enumeration)
+    phenotype_spec = _as_phenotype_spec(phenotype) if phenotype is not None else {"mode": PhenotypeMode.EMPTY.value}
+    kinetics_spec = _as_kinetics_spec(kinetics_defaults) if kinetics_defaults is not None else {}
+
+    pheno_mode_raw = phenotype_spec.get("mode", PhenotypeMode.EMPTY.value)
+    pheno_mode = pheno_mode_raw.value if isinstance(pheno_mode_raw, PhenotypeMode) else str(pheno_mode_raw)
+
+    constructed_organisms: dict[str, dict[str, Any]] = {}
+    for org_name, org_cfg in organisms.items():
+        if not isinstance(org_cfg, dict):
+            raise ValueError(
+                f"Organism '{org_name}' config must be a mapping, got {type(org_cfg).__name__}."
+            )
+
+        effective_cfg: dict[str, Any] = dict(org_cfg)
+        if exchange_mapping is not None:
+            effective_cfg["exchange_mapping"] = str(exchange_mapping)
+        if exchange_suffix is not None:
+            effective_cfg["exchange_suffix"] = exchange_suffix
+        if community_sbml_paths is not None and org_name in community_sbml_paths:
+            effective_cfg["sbml"] = str(community_sbml_paths[org_name])
+        elif organism_sbml_path is not None:
+            effective_cfg["sbml"] = str(organism_sbml_path)
+
+        has_mapping_source = any(
+            effective_cfg.get(key) not in (None, {}, "")
+            for key in ("supplement_to_exchange_map", "exchange_mapping", "custom_mapping")
+        )
+        # if not has_mapping_source:
+        #     raise ValueError(
+        #         f"Organism '{org_name}' must define at least one mapping source: "
+        #         "`supplement_to_exchange_map`, `exchange_mapping`, or `custom_mapping`."
+        #     )
+
+        if pheno_mode == PhenotypeMode.FBA.value and not effective_cfg.get("sbml"):
+            raise ValueError(
+                f"phenotype mode='fba' requires an SBML path for organism '{org_name}'. "
+                "Provide it via `organism_sbml_path`, `community_sbml_paths`, or the organism config."
+            )
+
+        constructed_organisms[org_name] = effective_cfg
+
+    synthetic_cfg: dict[str, Any] = {
+        "organisms": constructed_organisms,
+        "enumeration": enumeration_spec,
+        "phenotype": phenotype_spec,
+    }
+    if kinetics_spec:
+        synthetic_cfg["growth_kinetics_defaults"] = kinetics_spec
+    if output_dir is not None:
+        synthetic_cfg["output"] = {"dir": str(output_dir)}
+
+    return synthetic_cfg
+
+
+def _construct_single_organism_dataset_config_from_args(
+    *,
+    organism_sbml_path: str | Path | None = None,
+    supplement_to_exchange_map: dict[str, str] | None = None,
+    exchange_suffix: str | None = None,
+    output_dir: str | Path | None = None,
+    enumeration: EnumerationConfig | dict[str, Any] | None = None,
+    phenotype: PhenotypeConfig | dict[str, Any] | None = None,
+    kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Construct a one-organism synthetic config from explicit arguments."""
+    organism_cfg: dict[str, Any] = {
+        "supplement_to_exchange_map": dict(supplement_to_exchange_map) if supplement_to_exchange_map is not None else {},
+    }
+    if organism_sbml_path is not None:
+        organism_cfg["sbml"] = str(organism_sbml_path)
+    if exchange_suffix is not None:
+        organism_cfg["exchange_suffix"] = exchange_suffix
+
+    synthetic_cfg = _construct_dataset_config_from_args(
+        organisms={"organism": organism_cfg},
+        organism_sbml_path=organism_sbml_path,
+        exchange_suffix=exchange_suffix,
+        output_dir=output_dir,
+        enumeration=enumeration,
+        phenotype=phenotype,
+        kinetics_defaults=kinetics_defaults,
+    )
+    return synthetic_cfg
+
+
+def _construct_community_dataset_config_from_args(
+    *,
+    community_sbml_paths: dict[str, str | Path],
+    supplement_to_exchange_map: dict[str, str] | None = None,
+    exchange_suffix: str | None = None,
+    output_dir: str | Path | None = None,
+    enumeration: EnumerationConfig | dict[str, Any] | None = None,
+    phenotype: PhenotypeConfig | dict[str, Any] | None = None,
+    kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Construct a community synthetic config from explicit arguments."""
+    if not isinstance(community_sbml_paths, dict) or not community_sbml_paths:
+        raise ValueError("`community_sbml_paths` must be a non-empty mapping of organism name -> SBML path.")
+
+    organisms: dict[str, dict[str, Any]] = {}
+    for org_name, sbml_path in community_sbml_paths.items():
+        organism_cfg: dict[str, Any] = {
+            "sbml": str(sbml_path),
+            "supplement_to_exchange_map": dict(supplement_to_exchange_map) if supplement_to_exchange_map is not None else {},
+        }
+        if exchange_suffix is not None:
+            organism_cfg["exchange_suffix"] = exchange_suffix
+        organisms[org_name] = organism_cfg
+
+    return _construct_dataset_config_from_args(
+        organisms=organisms,
+        community_sbml_paths=community_sbml_paths,
+        exchange_suffix=exchange_suffix,
+        output_dir=output_dir,
+        enumeration=enumeration,
+        phenotype=phenotype,
+        kinetics_defaults=kinetics_defaults,
+    )
+
+
+def generate_organism_dataset(
+    *,
+    organism_sbml_path: str | Path | None = None,
+    supplement_to_exchange_map: dict[str, str] | None = None,
+    exchange_suffix: str | None = None,
+    output_dir: str | Path | None = None,
+    enumeration: EnumerationConfig | dict[str, Any] | None = None,
+    phenotype: PhenotypeConfig | dict[str, Any] | None = None,
+    kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
+) -> SyntheticDataset:
+    """Generate a dataset by constructing one organism config from arguments."""
+    constructed_config = _construct_single_organism_dataset_config_from_args(
+        organism_sbml_path=organism_sbml_path,
+        supplement_to_exchange_map=supplement_to_exchange_map,
+        exchange_suffix=exchange_suffix,
+        output_dir=output_dir,
+        enumeration=enumeration,
+        phenotype=phenotype,
+        kinetics_defaults=kinetics_defaults,
+    )
+    return generate_dataset(constructed_config, output_dir=output_dir)
+
+
+def generate_community_dataset(
+    *,
+    community_sbml_paths: dict[str, str | Path],
+    supplement_to_exchange_map: dict[str, str] | None = None ,
+    exchange_suffix: str | None = None,
+    output_dir: str | Path | None = None,
+    enumeration: EnumerationConfig | dict[str, Any] | None = None,
+    phenotype: PhenotypeConfig | dict[str, Any] | None = None,
+    kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
+) -> SyntheticDataset:
+    """Generate a dataset by constructing per-organism configs from arguments."""
+    constructed_config = _construct_community_dataset_config_from_args(
+        community_sbml_paths=community_sbml_paths,
+        supplement_to_exchange_map=supplement_to_exchange_map,
+        exchange_suffix=exchange_suffix,
+        output_dir=output_dir,
+        enumeration=enumeration,
+        phenotype=phenotype,
+        kinetics_defaults=kinetics_defaults,
+    )
+    return generate_dataset(constructed_config, output_dir=output_dir)
+
+
+def generate_dataset_from_args(
+    *,
+    organisms: dict[str, dict[str, Any]],
+    organism_sbml_path: str | Path | None = None,
+    community_sbml_paths: dict[str, str | Path] | None = None,
+    exchange_mapping: str | Path | None = None,
+    exchange_suffix: str | None = None,
+    output_dir: str | Path | None = None,
+    enumeration: EnumerationConfig | dict[str, Any] | None = None,
+    phenotype: PhenotypeConfig | dict[str, Any] | None = None,
+    kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
+) -> SyntheticDataset:
+    """Construct a synthetic config from explicit arguments and generate a dataset.
+
+    This is the constructor-style entry point for synthetic data generation.
+    It builds the config mapping from arguments, then delegates to
+    `generate_dataset` without loading or patching a YAML config.
+    """
+    constructed_config = _construct_dataset_config_from_args(
+        organisms=organisms,
+        organism_sbml_path=organism_sbml_path,
+        community_sbml_paths=community_sbml_paths,
+        exchange_mapping=exchange_mapping,
+        exchange_suffix=exchange_suffix,
+        output_dir=output_dir,
+        enumeration=enumeration,
+        phenotype=phenotype,
+        kinetics_defaults=kinetics_defaults,
+    )
+    return generate_dataset(constructed_config, output_dir=output_dir)
+
+
 def generate_dataset(
     config: dict | str | Path,
     *,

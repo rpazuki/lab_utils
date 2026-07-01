@@ -21,7 +21,10 @@ from labUtils.synthetic import (
     attach_phenotype,
     build_flux_dataframe,
     enumerate_conditions,
+    generate_community_dataset,
     generate_dataset,
+    generate_dataset_from_args,
+    generate_organism_dataset,
     write_dataset,
 )
 
@@ -585,6 +588,148 @@ class TestGenerateDataset:
     def test_missing_organisms_raises(self):
         with pytest.raises(ValueError, match="at least one organism"):
             generate_dataset({"synthetic": {"enumeration": {"mode": "cartesian", "supplements": {}}}})
+
+    def test_generate_dataset_from_args_matches_config_path(self):
+        cfg = {
+            "synthetic": {
+                "organisms": {
+                    "ecoli": {
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "molecular_weights": {"glucose": GLUCOSE_MW},
+                    }
+                },
+                "enumeration": {
+                    "mode": "cartesian",
+                    "supplements": {"glucose": {"levels": [0.0, 4.0]}},
+                },
+                "phenotype": {"mode": "empty"},
+                "growth_kinetics_defaults": {"max_time": 24.0, "mv_mu_max_value": 0.5},
+            }
+        }
+
+        from_cfg = generate_dataset(cfg)
+        from_args = generate_dataset_from_args(
+            organisms=cfg["synthetic"]["organisms"],
+            enumeration=cfg["synthetic"]["enumeration"],
+            phenotype=cfg["synthetic"]["phenotype"],
+            kinetics_defaults=cfg["synthetic"]["growth_kinetics_defaults"],
+        )
+
+        pd.testing.assert_frame_equal(from_cfg.conditions_df, from_args.conditions_df)
+        pd.testing.assert_frame_equal(from_cfg.medium_df, from_args.medium_df)
+        pd.testing.assert_frame_equal(from_cfg.flux_df, from_args.flux_df)
+
+    def test_generate_organism_dataset_matches_config_path(self):
+        cfg = {
+            "synthetic": {
+                "organisms": {
+                    "organism": {
+                        "sbml": "organism.xml",
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "exchange_suffix": "_i",
+                    }
+                },
+                "enumeration": {
+                    "mode": "cartesian",
+                    "supplements": {"glucose": {"levels": [0.0, 4.0]}},
+                },
+                "phenotype": {"mode": "empty"},
+            }
+        }
+
+        from_cfg = generate_dataset(cfg)
+        from_args = generate_organism_dataset(
+            organism_sbml_path="organism.xml",
+            supplement_to_exchange_map={"glucose": "EX_glc__D_e"},
+            exchange_suffix="_i",
+            enumeration=EnumerationConfig(
+                mode=EnumerationMode.CARTESIAN,
+                supplements={"glucose": SupplementSpec(levels=[0.0, 4.0])},
+            ),
+            phenotype=PhenotypeConfig(mode=PhenotypeMode.EMPTY),
+        )
+
+        pd.testing.assert_frame_equal(from_cfg.conditions_df, from_args.conditions_df)
+        pd.testing.assert_frame_equal(from_cfg.medium_df, from_args.medium_df)
+        pd.testing.assert_frame_equal(from_cfg.flux_df, from_args.flux_df)
+
+    def test_generate_organism_dataset_requires_enumeration(self):
+        with pytest.raises(ValueError, match="`enumeration` is required"):
+            generate_organism_dataset(
+                supplement_to_exchange_map={"glucose": "EX_glc__D_e"},
+                enumeration=None,
+            )
+
+    def test_generate_organism_dataset_requires_mapping(self):
+        with pytest.raises(ValueError, match="non-empty mapping"):
+            generate_organism_dataset(
+                supplement_to_exchange_map={},
+                enumeration=EnumerationConfig(
+                    mode=EnumerationMode.CARTESIAN,
+                    supplements={"glucose": SupplementSpec(levels=[0.0, 4.0])},
+                ),
+            )
+
+    def test_generate_community_dataset_matches_config_path(self):
+        cfg = {
+            "synthetic": {
+                "organisms": {
+                    "ecoli": {
+                        "sbml": "ecoli.xml",
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "exchange_suffix": "_i",
+                    },
+                    "bsubtilis": {
+                        "sbml": "bsubtilis.xml",
+                        "supplement_to_exchange_map": {"glucose": "EX_glc__D_e"},
+                        "exchange_suffix": "_i",
+                    },
+                },
+                "enumeration": {
+                    "mode": "cartesian",
+                    "supplements": {"glucose": {"levels": [0.0, 4.0]}},
+                },
+                "phenotype": {"mode": "empty"},
+            }
+        }
+
+        from_cfg = generate_dataset(cfg)
+        from_args = generate_community_dataset(
+            community_sbml_paths={"ecoli": "ecoli.xml", "bsubtilis": "bsubtilis.xml"},
+            supplement_to_exchange_map={"glucose": "EX_glc__D_e"},
+            exchange_suffix="_i",
+            enumeration=EnumerationConfig(
+                mode=EnumerationMode.CARTESIAN,
+                supplements={"glucose": SupplementSpec(levels=[0.0, 4.0])},
+            ),
+            phenotype=PhenotypeConfig(mode=PhenotypeMode.EMPTY),
+        )
+
+        pd.testing.assert_frame_equal(from_cfg.conditions_df, from_args.conditions_df)
+        pd.testing.assert_frame_equal(from_cfg.medium_df, from_args.medium_df)
+        assert set(from_args.flux_tables) == {"ecoli", "bsubtilis"}
+
+    def test_generate_community_dataset_requires_sbml_paths(self):
+        with pytest.raises(ValueError, match="non-empty mapping of organism name -> SBML path"):
+            generate_community_dataset(
+                community_sbml_paths={},
+                supplement_to_exchange_map={"glucose": "EX_glc__D_e"},
+                enumeration=EnumerationConfig(
+                    mode=EnumerationMode.CARTESIAN,
+                    supplements={"glucose": SupplementSpec(levels=[0.0, 4.0])},
+                ),
+            )
+
+    def test_generate_organism_dataset_requires_sbml_for_fba(self):
+        with pytest.raises(ValueError, match="requires an SBML path for organism 'organism'"):
+            generate_organism_dataset(
+                supplement_to_exchange_map={"glucose": "EX_glc__D_e"},
+                enumeration=EnumerationConfig(
+                    mode=EnumerationMode.CARTESIAN,
+                    supplements={"glucose": SupplementSpec(levels=[0.0, 4.0])},
+                ),
+                phenotype=PhenotypeConfig(mode=PhenotypeMode.FBA),
+            )
 
     def test_supplement_dataclass_roundtrip_keeps_dict_shape(self):
         cfg = EnumerationConfig(
