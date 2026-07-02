@@ -225,6 +225,14 @@ def build_mappings(
         except Exception as exc:
             logging.warning("Failed to load SBML exchange mapping for fallback resolution: %s", exc)
 
+    df_mapping = _harmonize_seed_mappings_with_sbml(
+        df_mapping,
+        sbml_lookup,
+        sbml_exchange_ids,
+        fuzzy_threshold,
+        resolution_stats=resolution_stats,
+    )
+
     # Level 2 — overlay YAML file (default or explicit).
     file_mapping = _load_yaml_mappings(custom_mapping_file)
     df_mapping = _apply_input_mapping(
@@ -873,6 +881,49 @@ def _resolve_exchange_from_sbml(
             return sbml_lookup[matches[0]], "sbml_fuzzy"
 
     return None, None
+
+
+def _harmonize_seed_mappings_with_sbml(
+    df_mapping: pd.DataFrame,
+    sbml_lookup: dict[str, str],
+    sbml_exchange_ids: set[str],
+    fuzzy_threshold: float,
+    resolution_stats: MappingResolutionStats | None = None,
+) -> pd.DataFrame:
+    """Resolve seed exchanges that are not present in the organism SBML."""
+    if df_mapping.empty or not sbml_lookup or not sbml_exchange_ids:
+        return df_mapping
+
+    for idx, existing_row in df_mapping.iterrows():
+        exchange_reaction = str(existing_row.get("exchange_reaction", "") or "").strip()
+        if not exchange_reaction or exchange_reaction in sbml_exchange_ids:
+            continue
+
+        row = {
+            "name": str(existing_row.get("name", "") or ""),
+            "iupac_name": str(existing_row.get("iupac_name", "") or ""),
+            "other_names": existing_row.get("other_names", set()),
+        }
+        resolved_exchange, resolution_stage = _resolve_exchange_from_sbml(row, sbml_lookup, fuzzy_threshold)
+        if resolved_exchange is None:
+            continue
+
+        df_mapping.at[idx, "exchange_reaction"] = resolved_exchange
+        logging.info(
+            "Resolved seed mapping exchange for '%s' from '%s' to '%s' via %s.",
+            row["name"],
+            exchange_reaction,
+            resolved_exchange,
+            resolution_stage,
+        )
+        if resolution_stats is not None:
+            resolution_stats.direct = max(0, resolution_stats.direct - 1)
+            if resolution_stage == "sbml_exact":
+                resolution_stats.sbml_exact += 1
+            elif resolution_stage == "sbml_fuzzy":
+                resolution_stats.sbml_fuzzy += 1
+
+    return df_mapping
 
 
 def _upsert_mapping_row(

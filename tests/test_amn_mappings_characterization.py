@@ -236,6 +236,21 @@ def test_build_mappings_resolves_missing_exchange_from_sbml_name(monkeypatch):
     assert row["exchange_reaction"] == "EX_gly_e"
 
 
+def test_build_mappings_harmonizes_seed_exchange_against_sbml(monkeypatch):
+    monkeypatch.setattr(
+        "labUtils.amn_mappings.parse_sbml_exchanges",
+        lambda _path: {"glucose": "EX_glc_bs"},
+    )
+    df = build_mappings(
+        _minimal_growth_df("glucose"),
+        supplement_to_exchange_map={"glucose": "EX_glc__D_e"},
+        custom_mapping_file="",
+        organism_sbml_path="dummy.xml",
+    )
+    row = df.loc[df["name"] == "glucose"].iloc[0]
+    assert row["exchange_reaction"] == "EX_glc_bs"
+
+
 def test_build_mappings_unknown_exchange_logs_new_diagnostic_wording(caplog):
     custom = {
         "mystery": {
