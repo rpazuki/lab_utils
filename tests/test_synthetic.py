@@ -744,6 +744,14 @@ class TestGenerateDataset:
         assert isinstance(as_dict["supplements"], dict)
         assert set(as_dict["supplements"].keys()) == {"glucose", "uracil", "glycine"}
         assert as_dict["supplements"]["glucose"]["levels"] == [0.0, 2.0, 4.0]
+        assert as_dict["supplements"]["glycine"]["range"] == {"min": 0.0, "max": 0.5, "n": 5}
+
+    def test_supplement_from_dict_accepts_flat_range_keys(self):
+        spec = SupplementSpec.from_dict({"range_min": 0.0, "range_max": 0.5, "range_n": 5})
+        assert spec.range_min == pytest.approx(0.0)
+        assert spec.range_max == pytest.approx(0.5)
+        assert spec.range_n == 5
+        assert spec.to_dict()["range"] == {"min": 0.0, "max": 0.5, "n": 5}
 
     def test_enumeration_override_works_when_yaml_section_missing(self):
         cfg = {

@@ -97,13 +97,16 @@ class SupplementSpec:
         levels_raw = data.get("levels")
         levels = [float(v) for v in levels_raw] if levels_raw is not None else None
         range_raw = data.get("range") or {}
+        range_min_raw = range_raw.get("min", data.get("range_min"))
+        range_max_raw = range_raw.get("max", data.get("range_max"))
+        range_n_raw = range_raw.get("n", data.get("range_n"))
         return cls(
             levels=levels,
             binary=bool(data.get("binary", False)),
             on_value=float(data["on_value"]) if data.get("on_value") is not None else None,
-            range_min=float(range_raw["min"]) if range_raw.get("min") is not None else None,
-            range_max=float(range_raw["max"]) if range_raw.get("max") is not None else None,
-            range_n=int(range_raw["n"]) if range_raw.get("n") is not None else None,
+            range_min=float(range_min_raw) if range_min_raw is not None else None,
+            range_max=float(range_max_raw) if range_max_raw is not None else None,
+            range_n=int(range_n_raw) if range_n_raw is not None else None,
             mmol_per_liter=float(data["mmol_per_liter"]) if data.get("mmol_per_liter") is not None else None,
             mol_per_liter=float(data["mol_per_liter"]) if data.get("mol_per_liter") is not None else None,
         )
@@ -695,6 +698,7 @@ def _build_organism_mappings(
         supplement_to_exchange_map=base_map,
         custom_mapping_file=mapping_file,
         custom_mapping=custom_mapping,
+        organism_sbml_path=organism_cfg.get("sbml"),
     )
 
 
@@ -865,6 +869,7 @@ def generate_organism_dataset(
     kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
 ) -> SyntheticDataset:
     """Generate a dataset by constructing one organism config from arguments."""
+    logging.info("Function labUtils.synthetic.generate_organism_dataset is started.")
     constructed_config = _construct_single_organism_dataset_config_from_args(
         organism_sbml_path=organism_sbml_path,
         supplement_to_exchange_map=supplement_to_exchange_map,
@@ -874,7 +879,11 @@ def generate_organism_dataset(
         phenotype=phenotype,
         kinetics_defaults=kinetics_defaults,
     )
-    return generate_dataset(constructed_config, output_dir=output_dir)
+    # Print the constructed config for debugging purposes in a formatted way
+    logging.debug("Constructed synthetic config:\n%s", yaml.dump(constructed_config, sort_keys=False))
+    ret = generate_dataset(constructed_config, output_dir=output_dir)
+    logging.info("Function labUtils.synthetic.generate_organism_dataset is finished.")
+    return ret
 
 
 def generate_community_dataset(
@@ -888,6 +897,7 @@ def generate_community_dataset(
     kinetics_defaults: KineticsDefaultsConfig | dict[str, Any] | None = None,
 ) -> SyntheticDataset:
     """Generate a dataset by constructing per-organism configs from arguments."""
+    logging.info("Function labUtils.synthetic.generate_community_dataset is started.")
     constructed_config = _construct_community_dataset_config_from_args(
         community_sbml_paths=community_sbml_paths,
         supplement_to_exchange_map=supplement_to_exchange_map,
@@ -897,7 +907,9 @@ def generate_community_dataset(
         phenotype=phenotype,
         kinetics_defaults=kinetics_defaults,
     )
-    return generate_dataset(constructed_config, output_dir=output_dir)
+    ret = generate_dataset(constructed_config, output_dir=output_dir)
+    logging.info("Function labUtils.synthetic.generate_community_dataset is finished.")
+    return ret
 
 
 def generate_dataset_from_args(

@@ -191,6 +191,69 @@ def test_build_mappings_halt_on_error_false_does_not_raise_on_unknown_exchange()
     assert "mystery" not in df["name"].values
 
 
+def test_build_mappings_accepts_exchange_present_in_sbml(monkeypatch):
+    monkeypatch.setattr(
+        "labUtils.amn_mappings.parse_sbml_exchanges",
+        lambda _path: {"uracil": "EX_ura_e"},
+    )
+    custom = {
+        "uracil_640": {
+            "exchange_name": "EX_ura_e",
+            "mass_per_litre": 0.64,
+            "source": MediumSource.SUPPLEMENT.value,
+        }
+    }
+    df = build_mappings(
+        _minimal_growth_df(),
+        supplement_to_exchange_map={},
+        custom_mapping=custom,
+        custom_mapping_file="",
+        organism_sbml_path="dummy.xml",
+    )
+    assert "uracil_640" in df["name"].values
+    assert df.loc[df["name"] == "uracil_640", "exchange_reaction"].iloc[0] == "EX_ura_e"
+
+
+def test_build_mappings_resolves_missing_exchange_from_sbml_name(monkeypatch):
+    monkeypatch.setattr(
+        "labUtils.amn_mappings.parse_sbml_exchanges",
+        lambda _path: {"glycine": "EX_gly_e"},
+    )
+    custom = {
+        "glycine": {
+            "mass_per_litre": 0.1,
+            "source": MediumSource.SUPPLEMENT.value,
+        }
+    }
+    df = build_mappings(
+        _minimal_growth_df(),
+        supplement_to_exchange_map={},
+        custom_mapping=custom,
+        custom_mapping_file="",
+        organism_sbml_path="dummy.xml",
+    )
+    row = df.loc[df["name"] == "glycine"].iloc[0]
+    assert row["exchange_reaction"] == "EX_gly_e"
+
+
+def test_build_mappings_unknown_exchange_logs_new_diagnostic_wording(caplog):
+    custom = {
+        "mystery": {
+            "exchange_name": "EX_does_not_exist",
+            "source": MediumSource.MEDIUM.value,
+            "mass_per_litre": 0.0,
+        }
+    }
+    with caplog.at_level(logging.INFO):
+        build_mappings(
+            _minimal_growth_df(),
+            supplement_to_exchange_map={"glucose": "EX_glc__D_e"},
+            custom_mapping=custom,
+            halt_on_error=False,
+        )
+    assert "Could not validate mapping exchange 'EX_does_not_exist'" in caplog.text
+
+
 def test_build_mappings_custom_mapping_file_explicit_yaml(tmp_path):
     """Explicit yaml filename (relative) is loaded from `yamls/` directory.
 

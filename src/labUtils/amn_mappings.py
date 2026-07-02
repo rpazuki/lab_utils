@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -156,6 +156,7 @@ def build_mappings(
     supplement_column: str = "supplements",
     custom_mapping_file: str | Path | None = None,
     custom_mapping: dict[str, str | dict[str, Any]] | None = None,
+    organism_sbml_path: str | Path | None = None,
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
     halt_on_error: bool = False,
@@ -200,13 +201,55 @@ def build_mappings(
         ],
     )
 
+    sbml_lookup: dict[str, str] = {}
+    sbml_exchange_ids: set[str] = set()
+    resolution_stats = MappingResolutionStats()
+
+    # Track direct resolutions from seed map.
+    resolution_stats.direct = len(supplement_to_exchange_map)
+
+    if organism_sbml_path is not None and str(organism_sbml_path).strip():
+        try:
+            sbml_mapping = parse_sbml_exchanges(organism_sbml_path)
+            sbml_lookup = {
+                _normalize_mapping_key(name): exchange
+                for name, exchange in sbml_mapping.items()
+                if str(name).strip()
+            }
+            sbml_exchange_ids = set(sbml_mapping.values())
+            logging.info(
+                "Loaded %d SBML exchange names and %d SBML exchange ids for mapping fallback.",
+                len(sbml_lookup),
+                len(sbml_exchange_ids),
+            )
+        except Exception as exc:
+            logging.warning("Failed to load SBML exchange mapping for fallback resolution: %s", exc)
+
     # Level 2 — overlay YAML file (default or explicit).
     file_mapping = _load_yaml_mappings(custom_mapping_file)
-    df_mapping = _apply_input_mapping(file_mapping, df_mapping, fuzzy_threshold, halt_on_error, verbose)
+    df_mapping = _apply_input_mapping(
+        file_mapping,
+        df_mapping,
+        fuzzy_threshold,
+        halt_on_error,
+        verbose,
+        sbml_lookup=sbml_lookup,
+        sbml_exchange_ids=sbml_exchange_ids,
+        resolution_stats=resolution_stats,
+    )
 
     # Level 3 — overlay caller-provided custom_mapping (highest precedence).
     if custom_mapping:
-        df_mapping = _apply_input_mapping(custom_mapping, df_mapping, fuzzy_threshold, halt_on_error, verbose)
+        df_mapping = _apply_input_mapping(
+            custom_mapping,
+            df_mapping,
+            fuzzy_threshold,
+            halt_on_error,
+            verbose,
+            sbml_lookup=sbml_lookup,
+            sbml_exchange_ids=sbml_exchange_ids,
+            resolution_stats=resolution_stats,
+        )
 
     # Level 4 — mark observed supplements from growth_rates_df.
     unique_supplements: set[str] = set()
@@ -236,7 +279,15 @@ def build_mappings(
             df_mapping.at[existing_rows.index[0], "other_names"].add(name)  # type: ignore[union-attr]
         else:
             unique_supplements_mapping[name] = _build_mapping_row(name, row)
-    df_mapping = _apply_input_mapping(unique_supplements_mapping, df_mapping, fuzzy_threshold, halt_on_error, verbose)
+    df_mapping = _apply_input_mapping(
+        unique_supplements_mapping,
+        df_mapping,
+        fuzzy_threshold,
+        halt_on_error,
+        verbose,
+        sbml_lookup=sbml_lookup,
+        sbml_exchange_ids=sbml_exchange_ids,
+    )
 
     # Sanity check 1 — at most one FIXED record per exchange reaction.
     fixed_exchanges = df_mapping.loc[df_mapping["source"] == MediumSource.FIXED.value, "exchange_reaction"].unique()
@@ -284,6 +335,7 @@ def build_mappings(
         logging.info(f"Final updated mapping dataframe:\n{df_report.to_string()}")
 
     logging.info("Function build_mappings finished successfully")
+    resolution_stats.log_summary(verbose=verbose)
     return df_mapping
 
 
@@ -295,6 +347,7 @@ def build_mapping_table(
     supplement_column: str = "supplements",
     custom_mapping_file: str | Path | None = None,
     custom_mapping: dict[str, str | dict[str, Any]] | None = None,
+    organism_sbml_path: str | Path | None = None,
     separator: str = ";",
     fuzzy_threshold: float = 0.6,
     halt_on_error: bool = False,
@@ -311,6 +364,7 @@ def build_mapping_table(
         supplement_column=supplement_column,
         custom_mapping_file=custom_mapping_file,
         custom_mapping=custom_mapping,
+        organism_sbml_path=organism_sbml_path,
         separator=separator,
         fuzzy_threshold=fuzzy_threshold,
         halt_on_error=halt_on_error,
@@ -698,31 +752,31 @@ def _search_mapping_by_name(
     name = row["name"]
     df = df_mapping.loc[df_mapping["name"] == name, :]
     if not df.empty:
-        return df, SearchResult.NAME
+        return cast(pd.DataFrame, df), SearchResult.NAME
 
     iupac_name = row["iupac_name"].strip()
     if iupac_name != "":
         df = df_mapping.loc[df_mapping["iupac_name"] == iupac_name, :]
         if not df.empty:
-            return df, SearchResult.IUPAC
+            return cast(pd.DataFrame, df), SearchResult.IUPAC
 
     map_keys = list(df_mapping["name"].values)
     matches = difflib.get_close_matches(name, map_keys, n=1, cutoff=fuzzy_threshold)
     if matches:
-        return df_mapping.loc[df_mapping["name"] == matches[0], :], SearchResult.FUZZY_NAME
+        return cast(pd.DataFrame, df_mapping.loc[df_mapping["name"] == matches[0], :]), SearchResult.FUZZY_NAME
     if iupac_name != "":
         matches = difflib.get_close_matches(iupac_name, map_keys, n=1, cutoff=fuzzy_threshold)
         if matches:
-            return df_mapping.loc[df_mapping["name"] == matches[0], :], SearchResult.FUZZY_NAME
+            return cast(pd.DataFrame, df_mapping.loc[df_mapping["name"] == matches[0], :]), SearchResult.FUZZY_NAME
 
     map_keys = list(df_mapping["iupac_name"].values)
     if iupac_name != "":
         matches = difflib.get_close_matches(iupac_name, map_keys, n=1, cutoff=fuzzy_threshold)
         if matches:
-            return df_mapping.loc[df_mapping["iupac_name"] == matches[0], :], SearchResult.FUZZY_IUPAC
+            return cast(pd.DataFrame, df_mapping.loc[df_mapping["iupac_name"] == matches[0], :]), SearchResult.FUZZY_IUPAC
     matches = difflib.get_close_matches(name, map_keys, n=1, cutoff=fuzzy_threshold)
     if matches:
-        return df_mapping.loc[df_mapping["name"] == matches[0], :], SearchResult.FUZZY_IUPAC
+        return cast(pd.DataFrame, df_mapping.loc[df_mapping["name"] == matches[0], :]), SearchResult.FUZZY_IUPAC
 
     return pd.DataFrame(), SearchResult.NOT_FOUND
 
@@ -737,12 +791,99 @@ def _merge_row_into_existing(row: dict[str, Any], existing_row: pd.Series) -> di
     return row
 
 
+def _append_mapping_row(df_mapping: pd.DataFrame, row: dict[str, Any]) -> pd.DataFrame:
+    """Append one row to `df_mapping` without using concat on empty/all-NA frames."""
+    row_df = pd.DataFrame([row], columns=df_mapping.columns)
+    if df_mapping.empty:
+        return row_df
+    df_mapping.loc[len(df_mapping)] = row_df.iloc[0]
+    return df_mapping
+
+
+@dataclass
+class MappingResolutionStats:
+    """Tracking for mapping resolution stages."""
+    direct: int = 0
+    sbml_exact: int = 0
+    sbml_fuzzy: int = 0
+    unresolved: int = 0
+
+    def log_summary(self, verbose: bool = False) -> None:
+        """Emit a summary report of resolution stages."""
+        total = self.direct + self.sbml_exact + self.sbml_fuzzy + self.unresolved
+        if total == 0:
+            return
+        pct_direct = (self.direct / total) * 100 if total > 0 else 0
+        pct_sbml_exact = (self.sbml_exact / total) * 100 if total > 0 else 0
+        pct_sbml_fuzzy = (self.sbml_fuzzy / total) * 100 if total > 0 else 0
+        pct_unresolved = (self.unresolved / total) * 100 if total > 0 else 0
+
+        msg = (
+            f"Mapping resolution summary: "
+            f"direct={self.direct}({pct_direct:.0f}%), "
+            f"sbml_exact={self.sbml_exact}({pct_sbml_exact:.0f}%), "
+            f"sbml_fuzzy={self.sbml_fuzzy}({pct_sbml_fuzzy:.0f}%), "
+            f"unresolved={self.unresolved}({pct_unresolved:.0f}%) [total={total}]"
+        )
+        if verbose:
+            logging.warning(msg)
+        else:
+            logging.info(msg)
+
+
+def _normalize_mapping_key(value: str) -> str:
+    """Normalize free-text compound keys for exact/fuzzy matching."""
+    return " ".join(str(value).strip().lower().replace("_", " ").replace("-", " ").split())
+
+
+def _resolve_exchange_from_sbml(
+    row: dict[str, Any],
+    sbml_lookup: dict[str, str],
+    fuzzy_threshold: float,
+) -> tuple[str | None, str | None]:
+    """Resolve a mapping row to an SBML exchange by exact/fuzzy name lookup."""
+    candidates: list[str] = []
+    for field in ("name", "iupac_name"):
+        val = str(row.get(field, "") or "").strip()
+        if val:
+            candidates.append(val)
+
+    other_names = row.get("other_names")
+    if isinstance(other_names, (set, list, tuple)):
+        for val in other_names:
+            txt = str(val).strip()
+            if txt:
+                candidates.append(txt)
+    elif isinstance(other_names, str) and other_names.strip():
+        candidates.extend([s.strip() for s in other_names.split(";") if s.strip()])
+
+    for candidate in candidates:
+        normalized = _normalize_mapping_key(candidate)
+        if normalized in sbml_lookup:
+            return sbml_lookup[normalized], "sbml_exact"
+
+    if not candidates or not sbml_lookup:
+        return None, None
+
+    sbml_keys = list(sbml_lookup.keys())
+    for candidate in candidates:
+        normalized = _normalize_mapping_key(candidate)
+        matches = difflib.get_close_matches(normalized, sbml_keys, n=1, cutoff=fuzzy_threshold)
+        if matches:
+            return sbml_lookup[matches[0]], "sbml_fuzzy"
+
+    return None, None
+
+
 def _upsert_mapping_row(
     df_mapping: pd.DataFrame,
     row: dict[str, Any],
     halt_on_not_found: bool,
     fuzzy_threshold: float,
     verbose: bool,
+    sbml_lookup: dict[str, str] | None = None,
+    sbml_exchange_ids: set[str] | None = None,
+    resolution_stats: MappingResolutionStats | None = None,
 ) -> pd.DataFrame:
     """Insert or update a single mapping row.
 
@@ -751,17 +892,40 @@ def _upsert_mapping_row(
     - If found by exact name/iupac, merges with existing.
     - If found by fuzzy or not at all, appends as new.
     """
-    if (
-        row["exchange_reaction"].strip() != ""
-        and df_mapping.loc[df_mapping["exchange_reaction"] == row["exchange_reaction"]].empty
-    ):
-        _log_alert(
-            f"There is no exchange reaction:'{row['exchange_reaction']}' in the organism. "
-            f"This is occured for mapping element:'{row['name']}' (iupac name:'{row['iupac_name']}'). ",
-            halt_on_not_found,
-            verbose,
-        )
-        return df_mapping
+    sbml_lookup = sbml_lookup or {}
+    sbml_exchange_ids = sbml_exchange_ids or set()
+    exchange_reaction = row["exchange_reaction"].strip()
+
+    if exchange_reaction != "":
+        present_in_mapping = not df_mapping.loc[df_mapping["exchange_reaction"] == exchange_reaction].empty
+        present_in_sbml = exchange_reaction in sbml_exchange_ids
+        if not present_in_mapping and not present_in_sbml:
+            resolved_exchange, resolution_stage = _resolve_exchange_from_sbml(row, sbml_lookup, fuzzy_threshold)
+            if resolved_exchange is not None:
+                logging.info(
+                    "Resolved mapping exchange for '%s' from '%s' to '%s' via %s.",
+                    row["name"],
+                    exchange_reaction,
+                    resolved_exchange,
+                    resolution_stage,
+                )
+                if resolution_stats is not None:
+                    if resolution_stage == "sbml_exact":
+                        resolution_stats.sbml_exact += 1
+                    elif resolution_stage == "sbml_fuzzy":
+                        resolution_stats.sbml_fuzzy += 1
+                row["exchange_reaction"] = resolved_exchange
+            else:
+                if resolution_stats is not None:
+                    resolution_stats.unresolved += 1
+                _log_alert(
+                    f"Could not validate mapping exchange '{exchange_reaction}' for mapping element "
+                    f"'{row['name']}' (iupac_name='{row['iupac_name']}') against current mapping seed "
+                    "or organism SBML.",
+                    halt_on_not_found,
+                    verbose,
+                )
+                return df_mapping
 
     if row["exchange_reaction"].strip() != "":
         existing_rows, search_result = _search_mapping_by_name(df_mapping, row, fuzzy_threshold)
@@ -770,7 +934,7 @@ def _upsert_mapping_row(
             SearchResult.FUZZY_NAME,
             SearchResult.FUZZY_IUPAC,
         }:
-            df_mapping = pd.concat([df_mapping, pd.DataFrame([row])], ignore_index=True)
+            df_mapping = _append_mapping_row(df_mapping, row)
             return df_mapping
         if existing_rows.shape[0] > 1:
             _log_alert(
@@ -787,14 +951,34 @@ def _upsert_mapping_row(
     existing_rows, search_result = _search_mapping_by_name(df_mapping, row, fuzzy_threshold)
 
     if existing_rows.empty and row["exchange_reaction"].strip() == "":
+        resolved_exchange, resolution_stage = _resolve_exchange_from_sbml(row, sbml_lookup, fuzzy_threshold)
+        if resolved_exchange is not None:
+            row["exchange_reaction"] = resolved_exchange
+            logging.info(
+                "Resolved missing exchange for '%s' to '%s' via %s.",
+                row["name"],
+                resolved_exchange,
+                resolution_stage,
+            )
+            if resolution_stats is not None:
+                if resolution_stage == "sbml_exact":
+                    resolution_stats.sbml_exact += 1
+                elif resolution_stage == "sbml_fuzzy":
+                    resolution_stats.sbml_fuzzy += 1
+            df_mapping = _append_mapping_row(df_mapping, row)
+            return df_mapping
+
+        if resolution_stats is not None:
+            resolution_stats.unresolved += 1
         _log_alert(
-            f"Could not found a match for name:'{row['name']}' (iupac_name:'{row['iupac_name']}').",
+            f"Could not resolve mapping for name '{row['name']}' (iupac_name='{row['iupac_name']}') "
+            "after checking existing mappings and organism SBML.",
             halt_on_error=halt_on_not_found,
             verbose=verbose,
         )
         return df_mapping
     if existing_rows.empty:
-        df_mapping = pd.concat([df_mapping, pd.DataFrame([row])], ignore_index=True)
+        df_mapping = _append_mapping_row(df_mapping, row)
         return df_mapping
 
     if existing_rows.shape[0] > 1:
@@ -826,50 +1010,65 @@ def _upsert_mapping_row(
             df_mapping.loc[existing_rows.index[0]] = row
         case SearchResult.NOT_FOUND:
             _log_alert(
-                f"Could not found a match for name:'{row['name']}' (iupac_name:'{row['iupac_name']}').",
+                f"Could not resolve mapping for name '{row['name']}' (iupac_name='{row['iupac_name']}') "
+                "after checking existing mappings and organism SBML.",
                 halt_on_error=halt_on_not_found,
                 verbose=verbose,
             )
     return df_mapping
 
 
-def _build_mapping_row(name: str, properties: dict[str, Any]) -> dict[str, Any]:
+def _build_mapping_row(name: str, properties: Any) -> dict[str, Any]:
     """Build a single mapping row from a `name`+`properties` pair (PubChem call hidden here)."""
     row: dict[str, Any] = {"name": name.strip().lower()}
-    exchange_name: str = properties.get("exchange_name", "")
+    properties_dict = properties if isinstance(properties, dict) else {}
+    if isinstance(properties, str):
+        exchange_name = properties
+    else:
+        exchange_name = str(properties_dict.get("exchange_name", ""))
     row["exchange_reaction"] = exchange_name
-    row["iupac_name"] = properties.get("iupac_name", "")
-    row["other_names"] = set(properties.get("other_names", []))
+    row["iupac_name"] = str(properties_dict.get("iupac_name", ""))
+    other_names = properties_dict.get("other_names", [])
+    if isinstance(other_names, str):
+        row["other_names"] = {s.strip() for s in other_names.split(";") if s.strip()}
+    else:
+        row["other_names"] = set(other_names)
 
-    mass_per_litre = properties.get("mass_per_litre") if isinstance(properties, dict) else 0.0
+    mass_per_litre = properties_dict.get("mass_per_litre", 0.0)
+    if mass_per_litre is None:
+        mass_per_litre = 0.0
     row["mass_per_litre"] = float(mass_per_litre)
 
     # mmol_per_liter / mol_per_liter override the PubChem-derived calculation entirely.
     # Precedence: mmol_per_liter > mol_per_liter > mass_per_litre → MW lookup.
-    if "mmol_per_liter" in properties:
-        row["mmol_concentration"] = float(properties["mmol_per_liter"])  # type: ignore[arg-type]
-    elif "mol_per_liter" in properties:
-        row["mmol_concentration"] = float(properties["mol_per_liter"]) * 1000.0  # type: ignore[arg-type]
+    mmol_per_liter = properties_dict.get("mmol_per_liter")
+    mol_per_liter = properties_dict.get("mol_per_liter")
+    if mmol_per_liter is not None:
+        row["mmol_concentration"] = float(mmol_per_liter)
+    elif mol_per_liter is not None:
+        row["mmol_concentration"] = float(mol_per_liter) * 1000.0
     else:
-        if "pubchem_name" in properties:
-            molecular_weight = find_molecular_weight(properties["pubchem_name"])  # type: ignore[index]
-        elif "pubchem_id" in properties:
-            molecular_weight = find_molecular_weight_by_id(properties["pubchem_id"])  # type: ignore[index]
-        elif "iupac_name" in properties and properties["iupac_name"] != "":
-            molecular_weight = find_molecular_weight(properties["iupac_name"])  # type: ignore[index]
+        pubchem_name = properties_dict.get("pubchem_name")
+        pubchem_id = properties_dict.get("pubchem_id")
+        if pubchem_name is not None:
+            molecular_weight = find_molecular_weight(str(pubchem_name))
+        elif pubchem_id is not None:
+            molecular_weight = find_molecular_weight_by_id(str(pubchem_id))
+        elif row["iupac_name"] != "":
+            molecular_weight = find_molecular_weight(row["iupac_name"])
         else:
             molecular_weight = find_molecular_weight(row["name"])
 
         mol = g_to_mol(float(mass_per_litre), molecular_weight) if molecular_weight else 0.0
         row["mmol_concentration"] = mol * 1000.0
 
-    if "flux_upper_bound" in properties and isinstance(properties, dict):
-        row["flux_upper_bound"] = float(properties["flux_upper_bound"])
+    if "flux_upper_bound" in properties_dict:
+        row["flux_upper_bound"] = float(properties_dict["flux_upper_bound"])
     else:
         row["flux_upper_bound"] = 0.0
 
-    if "source" in properties:
-        row["source"] = str(properties["source"])
+    if "source" in properties_dict:
+        row["source"] = str(properties_dict["source"])
     else:
         row["source"] = MediumSource.UNSTATED.value
 
@@ -878,7 +1077,12 @@ def _build_mapping_row(name: str, properties: dict[str, Any]) -> dict[str, Any]:
 
 
 def _explode_compound(
-    df_mapping: pd.DataFrame, compound_name: str, properties: dict[str, Any], halt_on_error: bool, verbose: bool
+    df_mapping: pd.DataFrame,
+    compound_name: str,
+    properties: dict[str, Any],
+    halt_on_error: bool,
+    verbose: bool,
+    sbml_lookup: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Split a compound into per-subcompound mapping rows weighted by molecular weight."""
     compound_name = compound_name.strip().lower()
@@ -887,13 +1091,53 @@ def _explode_compound(
             f"The exchange name:'{compound_name}' is marked as compound but no compounds were provided."
         )
     compounds = []
+    sbml_lookup = sbml_lookup or {}
     for subcompound in properties.get("compounds", []):
+        subcompound_name = str(subcompound).strip().lower()
         df = df_mapping.loc[
-            (df_mapping["name"] == subcompound) | (df_mapping["iupac_name"] == subcompound), :
+            (df_mapping["name"] == subcompound_name) | (df_mapping["iupac_name"] == subcompound_name), :
         ]
         if df.empty:
+            candidate_names = [str(v) for v in df_mapping["name"].fillna("").values if str(v).strip()]
+            candidate_iupac = [str(v) for v in df_mapping["iupac_name"].fillna("").values if str(v).strip()]
+            fuzzy_pool = candidate_names + candidate_iupac
+            matches = difflib.get_close_matches(subcompound_name, fuzzy_pool, n=1, cutoff=0.8)
+            if matches:
+                df = df_mapping.loc[
+                    (df_mapping["name"] == matches[0]) | (df_mapping["iupac_name"] == matches[0]), :
+                ]
+
+        if df.empty:
+            normalized = _normalize_mapping_key(subcompound_name)
+            sbml_exchange = sbml_lookup.get(normalized)
+            if sbml_exchange is not None:
+                try:
+                    compounds.append({
+                        "compound": get_compound_by_name(subcompound_name),
+                        "mapping_row": pd.Series({
+                            "name": subcompound_name,
+                            "iupac_name": "",
+                            "other_names": set(),
+                            "exchange_reaction": sbml_exchange,
+                            "mass_per_litre": 0.0,
+                        }),
+                    })
+                    logging.info(
+                        "Resolved compound component '%s' via SBML exchange '%s'.",
+                        subcompound_name,
+                        sbml_exchange,
+                    )
+                    continue
+                except Exception as exc:
+                    logging.info(
+                        "SBML component fallback for '%s' found exchange '%s' but compound lookup failed: %s",
+                        subcompound_name,
+                        sbml_exchange,
+                        exc,
+                    )
             _log_alert(
-                f"Could not find compound name:'{subcompound}' for compound '{compound_name}' in mappings.",
+                f"Could not resolve compound component '{subcompound_name}' for compound '{compound_name}' "
+                "after checking mapping rows and SBML fallbacks.",
                 halt_on_error=halt_on_error,
                 verbose=verbose,
             )
@@ -944,18 +1188,46 @@ def _apply_input_mapping(
     fuzzy_threshold: float,
     halt_on_error: bool,
     verbose: bool,
+    sbml_lookup: dict[str, str] | None = None,
+    sbml_exchange_ids: set[str] | None = None,
+    resolution_stats: MappingResolutionStats | None = None,
 ) -> pd.DataFrame:
     """Iterate an input mapping (dict) and upsert each entry into df_mapping."""
     for name, properties in input_mapping.items():
         if name is None:
             continue
         if isinstance(properties, dict) and properties.get("is_compound", False):
-            rows = _explode_compound(df_mapping, name, properties, halt_on_error, verbose)
+            rows = _explode_compound(
+                df_mapping,
+                name,
+                properties,
+                halt_on_error,
+                verbose,
+                sbml_lookup=sbml_lookup,
+            )
             for row in rows:
-                df_mapping = _upsert_mapping_row(df_mapping, row, halt_on_error, fuzzy_threshold, verbose)
+                df_mapping = _upsert_mapping_row(
+                    df_mapping,
+                    row,
+                    halt_on_error,
+                    fuzzy_threshold,
+                    verbose,
+                    sbml_lookup=sbml_lookup,
+                    sbml_exchange_ids=sbml_exchange_ids,
+                    resolution_stats=resolution_stats,
+                )
         else:
-            row = _build_mapping_row(name, properties if isinstance(properties, dict) else {})
-            df_mapping = _upsert_mapping_row(df_mapping, row, halt_on_error, fuzzy_threshold, verbose)
+            row = _build_mapping_row(name, properties)
+            df_mapping = _upsert_mapping_row(
+                df_mapping,
+                row,
+                halt_on_error,
+                fuzzy_threshold,
+                verbose,
+                sbml_lookup=sbml_lookup,
+                sbml_exchange_ids=sbml_exchange_ids,
+                resolution_stats=resolution_stats,
+            )
     return df_mapping
 
 
